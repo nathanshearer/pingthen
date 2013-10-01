@@ -89,6 +89,7 @@ function shearer_exit
 # \brief Displays the help and exits the program
 function shearer_help
 {
+	printf "$NAME $VERSION $COPYRIGHT\n"
 	printf "This script pings a host and executes arbitrary commands depending on a success or fail condition.\n\n"
 	printf "Usage:\n"
 	printf "  $CODENAME [options]\n"
@@ -116,12 +117,10 @@ function shearer_swap
 	mv "$TMP/swap" "$2"
 }
 
-# \brief Prints out the version and copyright and exits this program
-function shearer_version
-{
-	printf "$NAME $VERSION $COPYRIGHT\n"
-	exit
-}
+#------------------------------------------------------------------------------
+# check for dependencies
+
+shearer_check_dependencies ip ping
 
 #------------------------------------------------------------------------------
 # default configuration
@@ -130,12 +129,14 @@ DEBUG=false
 NICE=0
 TMP="/tmp"
 
-REMOTE_HOST=8.8.8.8    # The remote host to ping
-PING_DELAY=5s          # Delay for 3 seconds between each ping attempt
-PING_FAIL=3            # If 3 ping attempts fail, then run the failure commands
-PING_SEND=3            # Ping 3 times
-FAIL_ON=3              # Run pingthen_fail when 3 or more attempts fails
-SUCCESS_ON=3           # Run pingthen_success when 3 or more attempts succeed
+GATEWAYS=( 10.0.0.1 172.16.0.1 192.168.0.1 ) # An array of default gateways to monitor
+PING_DELAY=5s                                # Delay for 1 second between each ping attempt
+PING_SEND=3                                  # Ping the gateway 3 times
+PING_TIMEOUT=1                               # Time to wait for a response, in seconds
+OFFLINE_ON=3                                 # If 3 ping attempts fail, then the gateway is considered offline
+ONLINE_ON=3                                  # If 3 ping attempts reply, then the gateway is considered online
+ENDDELAY=0s                                  # How long to pause at the end of this script
+VERBOSE=false                                # Print out useful information
 
 #------------------------------------------------------------------------------
 # config files
@@ -154,8 +155,7 @@ while getopts "hn:r:v" OPTION; do
 	case "$OPTION" in
 		"h") shearer_help;;
 		"n") NICE="$OPTARG";;
-		"r") REMOTE_HOST="$OPTARG";;
-		"v") shearer_version;;
+		"v") VERBOSE=true;;
 		*) shearer_help;;
 	esac
 done
@@ -174,28 +174,65 @@ renice $NICE $$ >>"$LOG" 2>>"$LOG"
 #------------------------------------------------------------------------------
 # begin execution
 
-PING_SENT=0
-PING_RECEIVED=0
-PING_LOST=0
+# prepare each array:
+# PING_SENT=( 0 0 0 ... )
+# PING_RECEIVED=( 0 0 0 ... )
+# PING_LOST=( 0 0 0 ... )
+GATEWAY_INDEX=0
+for GATEWAY in "${GATEWAYS[@]}"; do
+	PING_SENT[$GATEWAY_INDEX]=0
+	PING_RECEIVED[$GATEWAY_INDEX]=0
+	PING_LOST[$GATEWAY_INDEX]=0
+	GATEWAY_INDEX=$(($GATEWAY_INDEX+1))
+done
+
+# ping each gateway
 for PING_ATTEMPT in `seq 1 $PING_SEND`; do
-	ping $REMOTE_HOST -c 1 >>"$LOG" 2>>"$LOG"
-	PING_RETURN=$?
-	if [ $PING_RETURN -eq 0 ]; then
-		PING_RECEIVED=$(($PING_RECEIVED+1))
-	fi
-	if [ $PING_RETURN -ne 0 ]; then
-		PING_LOST=$(($PING_LOST+1))
-	fi
-	PING_SENT=$(($PING_SENT+1))
+	# TODO ping each gateway in parallel with threads
+	GATEWAY_INDEX=0
+	for GATEWAY in "${GATEWAYS[@]}"; do
+		ping -W $PING_TIMEOUT ${GATEWAYS[$GATEWAY_INDEX]} -c 1 >>"$LOG" 2>>"$LOG"
+		PING_RETURN=$?
+		if [ $PING_RETURN -eq 0 ]; then
+			PING_RECEIVED[$GATEWAY_INDEX]=$((${PING_RECEIVED[$GATEWAY_INDEX]}+1))
+		fi
+		if [ $PING_RETURN -ne 0 ]; then
+			PING_LOST[$GATEWAY_INDEX]=$((${PING_LOST[$GATEWAY_INDEX]}+1))
+		fi
+		PING_SENT[$GATEWAY_INDEX]=$((${PING_SENT[$GATEWAY_INDEX]}+1))
+		GATEWAY_INDEX=$(($GATEWAY_INDEX+1))
+	done
 	sleep $PING_DELAY
 done
 
-echo "$PING_SENT transmitted, $PING_RECEIVED received, $PING_LOST lost"
-if [ $PING_RECEIVED -ge $SUCCESS_ON ]; then
-	pingthen_success
-fi
-if [ $PING_LOST -ge $FAIL_ON ]; then
-	pingthen_fail
+# echo out results
+if $VERBOSE; then
+	GATEWAY_INDEX=0
+	for GATEWAY in "${GATEWAYS[@]}"; do
+		echo "Gateway: ${GATEWAYS[$GATEWAY_INDEX]}"
+		echo "  Packets Sent: ${PING_SENT[$GATEWAY_INDEX]}"
+		echo "  Packets Received: ${PING_RECEIVED[$GATEWAY_INDEX]}"
+		echo "  Packets Lost: ${PING_LOST[$GATEWAY_INDEX]}"
+		GATEWAY_INDEX=$(($GATEWAY_INDEX+1))
+	done
 fi
 
-$0
+# update the default routes
+GATEWAY_INDEX=0
+for GATEWAY in "${GATEWAYS[@]}"; do
+	if [ ${PING_RECEIVED[$GATEWAY_INDEX]} -ge $ONLINE_ON ]; then
+		if $VERBOSE; then echo "Updating ${GATEWAYS[$GATEWAY_INDEX]} with a low metric"; fi
+		ip route del default via ${GATEWAYS[$GATEWAY_INDEX]}
+		ip route add default via ${GATEWAYS[$GATEWAY_INDEX]} metric $((1+$GATEWAY_INDEX))
+		# update this default route with a low metric
+	fi
+	if [ ${PING_LOST[$GATEWAY_INDEX]} -ge $OFFLINE_ON ]; then
+		if $VERBOSE; then echo "Updating ${GATEWAYS[$GATEWAY_INDEX]} with a high metric"; fi
+		ip route del default via ${GATEWAYS[$GATEWAY_INDEX]}
+		ip route add default via ${GATEWAYS[$GATEWAY_INDEX]} metric $((1+$GATEWAY_INDEX+${#GATEWAYS[@]}))
+	fi
+	GATEWAY_INDEX=$(($GATEWAY_INDEX+1))
+done
+
+if $VERBOSE; then echo "Waiting for $ENDDELAY"; fi
+sleep $ENDDELAY
