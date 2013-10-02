@@ -27,14 +27,63 @@ CODENAME="pingthen"
 COPYRIGHT="Copyright (C) 2013 Nathan Shearer"
 VERSION="1.0.0.0"
 
-function pingthen_fail
+# \brief Tests a gateway and modifies the routing table accordingly
+# \param $1 The subnet
+# \param $2 The gateway
+# \param $3 The metric to use when the gateway is online
+# \param $4 The metric to use when the gateway is offline
+function pingthen_test
 {
-	echo "pingthen_fail is not currently configured to do anything"
-}
-
-function pingthen_success
-{
-	echo "pingthen_success is not currently configured to do anything"
+	echo "pingthen_test" "$@" >> "$LOG"
+	# test the gateway and gather metrics
+	local PING_RECEIVED=0
+	local PING_LOST=0
+	local PING_SENT=0
+	PING_ATTEMPT=0
+	while [ $PING_ATTEMPT -lt $PING_SEND ]; do
+		ping -w $PING_TIMEOUT -c 1 $2 >>"$LOG" 2>>"$LOG"
+		local PING_RETURN=$?
+		if [ $PING_RETURN -eq 0 ]; then
+			PING_RECEIVED=$(($PING_RECEIVED+1))
+		fi
+		if [ $PING_RETURN -ne 0 ]; then
+			PING_LOST=$(($PING_LOST+1))
+		fi
+		PING_SENT=$(($PING_SENT+1))
+		sleep $PING_DELAY
+		PING_ATTEMPT=$(($PING_ATTEMPT+1))
+	done
+	# echo the metrics if verbose
+	if $VERBOSE; then
+		echo "PING $2, $PING_SENT packets transmitted, $PING_RECEIVED received, $PING_LOST lost"
+	fi
+	# adjust the routing table if necessary
+	if [ $PING_RECEIVED -ge $ONLINE_ON ]; then
+		if $VERBOSE; then echo "Updating $1 via $2 with metric $3"; fi
+		case $OPERATING_SYSTEM in
+			"Linux")
+				ip route del $1 via $2 1>>"$LOG" 2>>"$LOG"
+				ip route add $1 via $2 metric $3 1>>"$LOG" 2>>"$LOG"
+				;;
+			"OpenBSD")
+				route delete $1 $2 1>>"$LOG" 2>>"$LOG"
+				route add -priority $3 $1 $2 1>>"$LOG" 2>>"$LOG"
+				;;
+		esac
+	fi
+	if [ $PING_LOST -ge $OFFLINE_ON ]; then
+		if $VERBOSE; then echo "Updating $1 via $2 with metric $4"; fi
+		case $OPERATING_SYSTEM in
+			"Linux")
+				ip route del $1 via $2 1>>"$LOG" 2>>"$LOG"
+				ip route add $1 via $2 metric $4 1>>"$LOG" 2>>"$LOG"
+				;;
+			"OpenBSD")
+				route delete $1 $2 1>>"$LOG" 2>>"$LOG"
+				route add -priority $4 $1 $2 1>>"$LOG" 2>>"$LOG"
+				;;
+		esac
+	fi
 }
 
 # \brief Ensures dependencies are present
@@ -89,53 +138,58 @@ function shearer_exit
 # \brief Displays the help and exits the program
 function shearer_help
 {
-	printf "$NAME $VERSION $COPYRIGHT\n"
-	printf "This script pings a host and executes arbitrary commands depending on a success or fail condition.\n\n"
+	printf "$NAME $VERSION $COPYRIGHT\n\n"
+	printf "This script pings a gateway for each route and adjusts the metric for that route based on the up/down status of its gateway.\n\n"
 	printf "Usage:\n"
 	printf "  $CODENAME [options]\n"
 	printf "Options:\n"
 	printf "  -h\n"
 	printf "    Display this help message and exit.\n"
-	printf "  -n N\n"
-	printf "    Sets the niceness to N (default 0).\n"
-	printf "  -r 8.8.8.8\n"
-	printf "    The remote host to ping.\n"
 	printf "  -v\n"
-	printf "    Print the version and exit.\n"
-	printf "Examples:\n"
-	printf "  $CODENAME -h\n"
-	printf "  $CODENAME -n 5\n"
-	printf "  $CODENAME -v\n"
+	printf "    Be verbose.\n\n"
+	printf "Example /etc/pingthen.conf with three default gateways:\n"
+	printf "  ROUTES=( 0.0.0.0/0  10.0.0.1     1  11 \\ \n"
+	printf "           0.0.0.0/0  172.16.0.1   2  12 \\ \n"
+	printf "           0.0.0.0/0  192.168.0.1  3  13 )\n"
 	exit
 }
 
-# \brief Swaps files $1 and $2
-function shearer_swap
-{
-	mv "$1" "$TMP/swap"
-	mv "$2" "$1"
-	mv "$TMP/swap" "$2"
-}
-
 #------------------------------------------------------------------------------
-# check for dependencies
+# detect the operating system
 
-shearer_check_dependencies ip ping
+shearer_check_dependencies ping sleep
+OPERATING_SYSTEM=`uname -s`
+case $OPERATING_SYSTEM in
+	"Linux")
+		shearer_check_dependencies ip
+		;;
+	"OpenBSD")
+		shearer_check_dependencies route
+		;;
+	*)
+		echo "$0: $OPERATING_SYSTEM is currently an unsupported operating system"
+		exit 1
+esac
 
 #------------------------------------------------------------------------------
 # default configuration
 
 DEBUG=false
-NICE=0
 TMP="/tmp"
 
-GATEWAYS=( 10.0.0.1 172.16.0.1 192.168.0.1 ) # An array of default gateways to monitor
-PING_DELAY=5s                                # Delay for 1 second between each ping attempt
+# Array of routes
+#        subnet     gateway      online metric  offline metric
+ROUTES=( 0.0.0.0/0  10.0.0.1     1              11 \
+         0.0.0.0/0  172.16.0.1   2              12 \
+         0.0.0.0/0  192.168.0.1  3              13 )
+
+PING_DELAY=1                                 # Delay for 1 second between each ping attempt
 PING_SEND=3                                  # Ping the gateway 3 times
 PING_TIMEOUT=1                               # Time to wait for a response, in seconds
 OFFLINE_ON=3                                 # If 3 ping attempts fail, then the gateway is considered offline
 ONLINE_ON=3                                  # If 3 ping attempts reply, then the gateway is considered online
-ENDDELAY=0s                                  # How long to pause at the end of this script
+ENDDELAY=1                                   # How long to pause at the end of this script
+REPEATS=1073741824                           # Repeat execution 2^30 times so inittab doesn't respawn this process to fast
 VERBOSE=false                                # Print out useful information
 
 #------------------------------------------------------------------------------
@@ -144,9 +198,6 @@ VERBOSE=false                                # Print out useful information
 if [ -r /etc/$CODENAME.conf ]; then
 	. /etc/$CODENAME.conf
 fi
-if [ -r ~/.$CODENAME.conf ]; then
-	. ~/.$CODENAME.conf
-fi
 
 #------------------------------------------------------------------------------
 # command line arguments
@@ -154,7 +205,6 @@ fi
 while getopts "hn:r:v" OPTION; do
 	case "$OPTION" in
 		"h") shearer_help;;
-		"n") NICE="$OPTARG";;
 		"v") VERBOSE=true;;
 		*) shearer_help;;
 	esac
@@ -169,70 +219,20 @@ TMP="$TMP/$CODENAME.$$"
 mkdir -p "$TMP"
 LOG="$TMP/log"
 touch "$LOG"
-renice $NICE $$ >>"$LOG" 2>>"$LOG"
 
 #------------------------------------------------------------------------------
 # begin execution
 
-# prepare each array:
-# PING_SENT=( 0 0 0 ... )
-# PING_RECEIVED=( 0 0 0 ... )
-# PING_LOST=( 0 0 0 ... )
-GATEWAY_INDEX=0
-for GATEWAY in "${GATEWAYS[@]}"; do
-	PING_SENT[$GATEWAY_INDEX]=0
-	PING_RECEIVED[$GATEWAY_INDEX]=0
-	PING_LOST[$GATEWAY_INDEX]=0
-	GATEWAY_INDEX=$(($GATEWAY_INDEX+1))
-done
-
-# ping each gateway
-for PING_ATTEMPT in `seq 1 $PING_SEND`; do
-	# TODO ping each gateway in parallel with threads
-	GATEWAY_INDEX=0
-	for GATEWAY in "${GATEWAYS[@]}"; do
-		ping -W $PING_TIMEOUT ${GATEWAYS[$GATEWAY_INDEX]} -c 1 >>"$LOG" 2>>"$LOG"
-		PING_RETURN=$?
-		if [ $PING_RETURN -eq 0 ]; then
-			PING_RECEIVED[$GATEWAY_INDEX]=$((${PING_RECEIVED[$GATEWAY_INDEX]}+1))
-		fi
-		if [ $PING_RETURN -ne 0 ]; then
-			PING_LOST[$GATEWAY_INDEX]=$((${PING_LOST[$GATEWAY_INDEX]}+1))
-		fi
-		PING_SENT[$GATEWAY_INDEX]=$((${PING_SENT[$GATEWAY_INDEX]}+1))
-		GATEWAY_INDEX=$(($GATEWAY_INDEX+1))
+REPEAT=0
+while [ $REPEAT -lt $REPEATS ]; do
+	ROUTE=0
+	while [ $ROUTE -lt $((${#ROUTES[*]}/4)) ]; do
+		pingthen_test ${ROUTES[$(($ROUTE*4+0))]} ${ROUTES[$(($ROUTE*4+1))]} ${ROUTES[$(($ROUTE*4+2))]} ${ROUTES[$(($ROUTE*4+3))]}
+		ROUTE=$(($ROUTE+1))
 	done
-	sleep $PING_DELAY
+	if $VERBOSE; then echo "Waiting for $ENDDELAY second(s)"; fi
+	sleep $ENDDELAY
+	REPEAT=$(($REPEAT+1))
 done
 
-# echo out results
-if $VERBOSE; then
-	GATEWAY_INDEX=0
-	for GATEWAY in "${GATEWAYS[@]}"; do
-		echo "Gateway: ${GATEWAYS[$GATEWAY_INDEX]}"
-		echo "  Packets Sent: ${PING_SENT[$GATEWAY_INDEX]}"
-		echo "  Packets Received: ${PING_RECEIVED[$GATEWAY_INDEX]}"
-		echo "  Packets Lost: ${PING_LOST[$GATEWAY_INDEX]}"
-		GATEWAY_INDEX=$(($GATEWAY_INDEX+1))
-	done
-fi
-
-# update the default routes
-GATEWAY_INDEX=0
-for GATEWAY in "${GATEWAYS[@]}"; do
-	if [ ${PING_RECEIVED[$GATEWAY_INDEX]} -ge $ONLINE_ON ]; then
-		if $VERBOSE; then echo "Updating ${GATEWAYS[$GATEWAY_INDEX]} with a low metric"; fi
-		ip route del default via ${GATEWAYS[$GATEWAY_INDEX]}
-		ip route add default via ${GATEWAYS[$GATEWAY_INDEX]} metric $((1+$GATEWAY_INDEX))
-		# update this default route with a low metric
-	fi
-	if [ ${PING_LOST[$GATEWAY_INDEX]} -ge $OFFLINE_ON ]; then
-		if $VERBOSE; then echo "Updating ${GATEWAYS[$GATEWAY_INDEX]} with a high metric"; fi
-		ip route del default via ${GATEWAYS[$GATEWAY_INDEX]}
-		ip route add default via ${GATEWAYS[$GATEWAY_INDEX]} metric $((1+$GATEWAY_INDEX+${#GATEWAYS[@]}))
-	fi
-	GATEWAY_INDEX=$(($GATEWAY_INDEX+1))
-done
-
-if $VERBOSE; then echo "Waiting for $ENDDELAY"; fi
-sleep $ENDDELAY
+exit
