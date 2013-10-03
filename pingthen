@@ -201,22 +201,19 @@ esac
 
 DEBUG=false
 TMP="/tmp"
-
-# Array of routes
 #        subnet     gateway      online metric  offline metric
 ROUTES=( 0.0.0.0/0  10.0.0.1     1              11 \
          0.0.0.0/0  172.16.0.1   2              12 \
          0.0.0.0/0  192.168.0.1  3              13 )
-
-PING_DELAY=1                                 # Delay for 1 second between each ping attempt
-PING_SEND=3                                  # Ping the gateway 3 times
-PING_TIMEOUT=1                               # Time to wait for a response, in seconds
-OFFLINE_ON=3                                 # If 3 ping attempts fail, then the gateway is considered offline
-ONLINE_ON=3                                  # If 3 ping attempts reply, then the gateway is considered online
-ENDDELAY=1                                   # How long to pause at the end of this script
-REPEATS=1073741824                           # Repeat execution 2^30 times so inittab doesn't respawn this process to fast
-EMAIL=mail@example.com                       # Which e-mail address to send notifications
-VERBOSE=false                                # Print out useful information
+PING_DELAY=1              # Delay for 1 second between each ping attempt
+PING_SEND=3               # Ping the gateway 3 times
+PING_TIMEOUT=1            # Time to wait for a response, in seconds
+OFFLINE_ON=3              # If 3 ping attempts fail, then the gateway is considered offline
+ONLINE_ON=3               # If 3 ping attempts reply, then the gateway is considered online
+ENDDELAY=1                # How long to pause at the end of this script
+REPEATS=16777216          # Repeat execution 2^24 times so inittab doesn't respawn this process to fast
+EMAIL=mail@example.com    # Which e-mail address to send notifications
+VERBOSE=false             # Print out useful information
 
 #------------------------------------------------------------------------------
 # config files
@@ -260,5 +257,3 @@ while [ $REPEAT -lt $REPEATS ]; do
 	sleep $ENDDELAY
 	REPEAT=$(($REPEAT+1))
 done
-
-exit
