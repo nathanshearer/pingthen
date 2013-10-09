@@ -1,0 +1,267 @@
+#!/bin/bash
+
+#----------------------------------------------------------------------------
+# autoroute
+# Copyright (C) 2013 Nathan Shearer
+#
+# This program is free software; you can redistribute it and/or modify it
+# under the terms of the GNU General Public License version 2 as published by
+# the Free Software Foundation.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+# more details.
+#
+# You should have received a copy of the GNU General Public License along
+# with this program; if not, write to:
+#   The Free Software Foundation Inc.
+#   51 Franklin Street
+#   Fifth Floor
+#   Boston, MA
+#   02110-1301
+#   USA
+
+NAME="autoroute"
+CODENAME="autoroute"
+COPYRIGHT="Copyright (C) 2013 Nathan Shearer"
+VERSION="1.0.0.0"
+
+# \brief Tests a gateway and modifies the routing table accordingly
+# \param $1 The subnet
+# \param $2 The gateway
+# \param $3 The metric to use when the gateway is online
+# \param $4 The metric to use when the gateway is offline
+function autoroute_test
+{
+	echo "autoroute_test" "$@" >> "$LOG"
+	# test the gateway and gather metrics
+	local PING_RECEIVED=0
+	local PING_LOST=0
+	local PING_SENT=0
+	PING_ATTEMPT=0
+	while [ $PING_ATTEMPT -lt $PING_SEND ]; do
+		ping -w $PING_TIMEOUT -c 1 $2 >>"$LOG" 2>>"$LOG"
+		local PING_RETURN=$?
+		if [ $PING_RETURN -eq 0 ]; then
+			PING_RECEIVED=$(($PING_RECEIVED+1))
+		fi
+		if [ $PING_RETURN -ne 0 ]; then
+			PING_LOST=$(($PING_LOST+1))
+		fi
+		PING_SENT=$(($PING_SENT+1))
+		sleep $PING_DELAY
+		PING_ATTEMPT=$(($PING_ATTEMPT+1))
+	done
+	# echo the metrics if verbose
+	if $VERBOSE; then
+		echo "PING $2, $PING_SENT packets transmitted, $PING_RECEIVED received, $PING_LOST lost"
+	fi
+	# adjust the routing table if necessary
+	if [ $PING_RECEIVED -ge $ONLINE_ON ]; then
+		case $OPERATING_SYSTEM in
+			"Linux")
+				if [ `ip route | grep $2 | grep --count -e "metric $3[[:space:]]"` -eq 0 ]; then
+					if $VERBOSE; then echo "Updating $1 via $2 with metric $3"; fi
+					ip route del $1 via $2 1>>"$LOG" 2>>"$LOG"
+					ip route add $1 via $2 metric $3 1>>"$LOG" 2>>"$LOG"
+					rm -f "$TMP/email"
+					printf "$PING_SENT packets transmitted, $PING_RECEIVED received, $PING_LOST lost.\n\n" >> "$TMP/email"
+					printf "Updated $1 via $2 with metric $3\n\n" >> "$TMP/email"
+					printf -- "--------\n# ip route\n" >> "$TMP/email"
+					ip route >> "$TMP/email"
+					cat "$TMP/email" | mail -s `hostname --fqdn`": $2 is online" $EMAIL
+				fi
+				;;
+			"OpenBSD")
+				if [ `route show | tr -s ' ' | cut -d ' ' -f 2,7 | grep $2 | cut -d ' ' -f 2` -ne $3 ]; then
+					if $VERBOSE; then echo "Updating $1 via $2 with metric $3"; fi
+					route delete $1 $2 1>>"$LOG" 2>>"$LOG"
+					route add -priority $3 $1 $2 1>>"$LOG" 2>>"$LOG"
+					rm -f "$TMP/email"
+					printf "$PING_SENT packets transmitted, $PING_RECEIVED received, $PING_LOST lost.\n\n" >> "$TMP/email"
+					printf "Updated $1 via $2 with metric $3\n\n" >> "$TMP/email"
+					printf -- "--------\n# route show\n" >> "$TMP/email"
+					route show >> "$TMP/email"
+					cat "$TMP/email" | mail -s `hostname`": $2 is online" $EMAIL
+				fi
+				;;
+		esac
+	fi
+	if [ $PING_LOST -ge $OFFLINE_ON ]; then
+		case $OPERATING_SYSTEM in
+			"Linux")
+				if [ `ip route | grep $2 | grep --count -e "metric $4[[:space:]]"` -eq 0 ]; then
+					if $VERBOSE; then echo "Updating $1 via $2 with metric $4"; fi
+					ip route del $1 via $2 1>>"$LOG" 2>>"$LOG"
+					ip route add $1 via $2 metric $4 1>>"$LOG" 2>>"$LOG"
+					rm -f "$TMP/email"
+					printf "$PING_SENT packets transmitted, $PING_RECEIVED received, $PING_LOST lost.\n\n" >> "$TMP/email"
+					printf "Updated $1 via $2 with metric $4\n\n" >> "$TMP/email"
+					printf -- "--------\n# ip route\n" >> "$TMP/email"
+					ip route >> "$TMP/email"
+					cat "$TMP/email" | mail -s `hostname --fqdn`": $2 is offline" $EMAIL
+				fi
+				;;
+			"OpenBSD")
+				if [ `route show | tr -s ' ' | cut -d ' ' -f 2,7 | grep $2 | cut -d ' ' -f 2` -ne $4 ]; then
+					if $VERBOSE; then echo "Updating $1 via $2 with metric $4"; fi
+					route delete $1 $2 1>>"$LOG" 2>>"$LOG"
+					route add -priority $4 $1 $2 1>>"$LOG" 2>>"$LOG"
+					rm -f "$TMP/email"
+					printf "$PING_SENT packets transmitted, $PING_RECEIVED received, $PING_LOST lost.\n\n" >> "$TMP/email"
+					printf "Updated $1 via $2 with metric $4\n\n" >> "$TMP/email"
+					printf -- "--------\n# route show\n" >> "$TMP/email"
+					route show >> "$TMP/email"
+					cat "$TMP/email" | mail -s `hostname`": $2 is offline" $EMAIL
+				fi
+				;;
+		esac
+	fi
+}
+
+# \brief Ensures dependencies are present
+# \param $@ The dependencies to check for
+function shearer_check_dependencies
+{
+	for TOOL in "$@"; do
+		if ! type "$TOOL" >/dev/null 2>/dev/null; then
+			echo "$CODENAME: \"$TOOL\" is required for this application to work correctly." >&2
+			exit
+		fi
+	done
+}
+
+# \brief Cleans up the environment and exits
+# \param $1 The exit code
+# \param $2 The exit message
+#
+# If DEBUG=true then temporary files are not deleted.
+function shearer_exit
+{
+	#echo "shearer_exit" "$@" >>"$LOG"
+	local EXIT="$1"
+	local MESSAGE="$2"
+	if [ "$EXIT" = "" ]; then
+		EXIT=0
+	fi
+	if [ "$MESSAGE" = "" ]; then
+		MESSAGE="An unrecoverable error has occurred"
+	fi
+	if ! $DEBUG; then
+		rm -rf "$TMP"
+	else
+		printf "Debug mode is enabled. Temporary files in \"$TMP\" will *not* be deleted.\n"
+	fi
+	case $EXIT in
+		0) exit;;
+		*) echo "$CODENAME: $MESSAGE" >&2; exit $EXIT;;
+	esac
+}
+
+# \brief Displays the help and exits the program
+function shearer_help
+{
+	printf "$NAME $VERSION $COPYRIGHT\n\n"
+	printf "This script pings a gateway for each route and adjusts the metric for that route based on the up/down status of its gateway.\n\n"
+	printf "Usage:\n"
+	printf "  $CODENAME [options]\n"
+	printf "Options:\n"
+	printf "  -h\n"
+	printf "    Display this help message and exit.\n"
+	printf "  -r\n"
+	printf "    Respawn this process on exit.\n"
+	printf "  -v\n"
+	printf "    Be verbose.\n\n"
+	printf "Example /etc/autoroute.conf with three default gateways:\n"
+	printf "  ROUTES=( 0.0.0.0/0  10.0.0.1     1  11 \\ \n"
+	printf "           0.0.0.0/0  172.16.0.1   2  12 \\ \n"
+	printf "           0.0.0.0/0  192.168.0.1  3  13 )\n"
+	printf "  EMAIL=\"mail@example.com\"\n"
+	exit
+}
+
+#------------------------------------------------------------------------------
+# detect the operating system
+
+shearer_check_dependencies grep hostname mail ping sleep
+OPERATING_SYSTEM=`uname -s`
+case $OPERATING_SYSTEM in
+	"Linux")
+		shearer_check_dependencies ip
+		;;
+	"OpenBSD")
+		shearer_check_dependencies cut route tr
+		;;
+	*)
+		echo "$0: $OPERATING_SYSTEM is currently an unsupported operating system"
+		exit 1
+esac
+
+#------------------------------------------------------------------------------
+# default configuration
+
+DEBUG=false
+TMP="/tmp"
+#        subnet     gateway      online metric  offline metric
+ROUTES=( 0.0.0.0/0  10.0.0.1     1              11 \
+         0.0.0.0/0  172.16.0.1   2              12 \
+         0.0.0.0/0  192.168.0.1  3              13 )
+PING_DELAY=1              # Delay for 1 second between each ping attempt
+PING_SEND=3               # Ping the gateway 3 times
+PING_TIMEOUT=1            # Time to wait for a response, in seconds
+OFFLINE_ON=3              # If 3 ping attempts fail, then the gateway is considered offline
+ONLINE_ON=3               # If 3 ping attempts reply, then the gateway is considered online
+ENDDELAY=1                # How long to pause at the end of this script
+REPEATS=16777216          # Repeat execution 2^24 times so this process doesn't respawn too fast
+EMAIL=mail@example.com    # Which e-mail address to send notifications
+VERBOSE=false             # Print out useful information
+RESPAWN=false             # Respawn this process on exit
+
+#------------------------------------------------------------------------------
+# config files
+
+if [ -r /etc/$CODENAME.conf ]; then
+	. /etc/$CODENAME.conf
+fi
+
+#------------------------------------------------------------------------------
+# command line arguments
+
+while getopts "hr:v" OPTION; do
+	case "$OPTION" in
+		"h") shearer_help;;
+		"r") RESPAWN=true;;
+		"v") VERBOSE=true;;
+		*) shearer_help;;
+	esac
+done
+shift $(( $OPTIND - 1 ))
+
+#------------------------------------------------------------------------------
+# prepare environment
+
+trap shearer_exit EXIT SIGHUP SIGINT SIGQUIT SIGABRT SIGKILL SIGTERM
+TMP="$TMP/$CODENAME.$$"
+mkdir -p "$TMP"
+LOG="$TMP/log"
+touch "$LOG"
+
+#------------------------------------------------------------------------------
+# begin execution
+
+REPEAT=0
+while [ $REPEAT -lt $REPEATS ]; do
+	ROUTE=0
+	while [ $ROUTE -lt $((${#ROUTES[*]}/4)) ]; do
+		autoroute_test ${ROUTES[$(($ROUTE*4+0))]} ${ROUTES[$(($ROUTE*4+1))]} ${ROUTES[$(($ROUTE*4+2))]} ${ROUTES[$(($ROUTE*4+3))]}
+		ROUTE=$(($ROUTE+1))
+	done
+	if $VERBOSE; then echo "Waiting for $ENDDELAY second(s)"; fi
+	sleep $ENDDELAY
+	REPEAT=$(($REPEAT+1))
+done
+
+if $RESPAWN; then
+	$0 &
+fi
