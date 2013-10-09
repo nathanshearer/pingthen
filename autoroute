@@ -228,7 +228,7 @@ fi
 #------------------------------------------------------------------------------
 # command line arguments
 
-while getopts "hr:v" OPTION; do
+while getopts "hrv" OPTION; do
 	case "$OPTION" in
 		"h") shearer_help;;
 		"r") RESPAWN=true;;
