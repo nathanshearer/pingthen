@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 #----------------------------------------------------------------------------
 # pingthen
@@ -25,21 +25,34 @@
 NAME="pingthen"
 CODENAME="pingthen"
 COPYRIGHT="Copyright (C) 2013 Nathan Shearer"
-VERSION="1.0.0.0"
+VERSION="2.0.0.0"
 
-# \brief Pings an IP and executes commands based on the result
+# \brief Ping an IP and executes commands based on the result
 # \param $1 The IP address to ping
-# \param $2 The function to esecute when $1 is offline
+# \param $2 If this many consecutive packets are lost, then the state will change to down
+# \param $3 If this many consecutive packets are replied, then the state will change to up
+# \param $4 The function to execute when the state changes to down
+# \param $5 The function to execute when the state changes to up
+# \param $6 The function to execute when the state remains down
+# \param $7 The function to execute when the state remains up
 function pingthen_test
 {
-	echo "pingthen_test" "$@" >> "$LOG"
+	shearer_log 3 "pingthen_test $*"
+	# assign arguments
+	local HOST="$1"
+	local DOWN_ON="$2"
+	local UP_ON="$3"
+	local ON_DOWN="$4"
+	local ON_UP="$5"
+	local WHILE_DOWN="$6"
+	local WHILE_UP="$7"
 	# ping the IP and gather metrics
 	local PING_RECEIVED=0
 	local PING_LOST=0
 	local PING_SENT=0
 	PING_ATTEMPT=0
 	while [ $PING_ATTEMPT -lt $PING_SEND ]; do
-		ping -w $PING_TIMEOUT -c 1 $1 >>"$LOG" 2>>"$LOG"
+		ping -w $PING_TIMEOUT -c 1 $HOST >/dev/null 2>/dev/null
 		local PING_RETURN=$?
 		if [ $PING_RETURN -eq 0 ]; then
 			PING_RECEIVED=$(($PING_RECEIVED+1))
@@ -51,21 +64,48 @@ function pingthen_test
 		sleep $PING_DELAY
 		PING_ATTEMPT=$(($PING_ATTEMPT+1))
 	done
-	# echo the metrics if verbose
-	if $VERBOSE; then
-		echo "PING $1, $PING_SENT packets transmitted, $PING_RECEIVED received, $PING_LOST lost"
+	shearer_log 2 "PING $HOST, $PING_SENT packets transmitted, $PING_RECEIVED received, $PING_LOST lost"
+	if [ $PING_RECEIVED -ge $UP_ON ]; then
+		case ${HOST_STATE[$HOST]} in
+			"")
+				HOST_STATE[$HOST]="up"
+				shearer_log 1 "Detected host $HOST state is up"
+				;;
+			"up")
+				if [ "$WHILE_UP" != "false" ]; then
+					shearer_log 1 "Host $HOST is currently up. Executing $WHILE_UP"
+					$WHILE_UP $HOST
+				fi
+				;;
+			"down")
+				HOST_STATE[$HOST]="up"
+				if [ "$ON_UP" != "false" ]; then
+					shearer_log 1 "Host $HOST is now up. Executing $ON_UP"
+					$ON_UP $HOST
+				fi
+				;;
+		esac
 	fi
-	if [ $PING_RECEIVED -ge $ONLINE_ON ]; then
-		if $VERBOSE; then
-			echo "Executing $ON_ONLINE"
-		fi
-		$ON_ONLINE
-	fi
-	if [ $PING_LOST -ge $OFFLINE_ON ]; then
-		if $VERBOSE; then
-			echo "Executing $ON_OFFLINE"
-		fi
-		$ON_OFFLINE
+	if [ $PING_LOST -ge $DOWN_ON ]; then
+		case ${HOST_STATE[$HOST]} in
+			"")
+				HOST_STATE[$HOST]="down"
+				shearer_log 1 "Detected host $HOST state is down"
+				;;
+			"up")
+				HOST_STATE[$HOST]="down"
+				if [ "$ON_DOWN" != "false" ]; then
+					shearer_log 1 "Host $HOST is now down. Executing $ON_DOWN"
+					$ON_DOWN $HOST
+				fi
+				;;
+			"down")
+				if [ "$WHILE_DOWN" != "false" ]; then
+					shearer_log 1 "Host $HOST is currently down. Executing $WHILE_DOWN"
+					$WHILE_DOWN $HOST
+				fi
+				;;
+		esac
 	fi
 }
 
@@ -88,7 +128,9 @@ function shearer_check_dependencies
 # If DEBUG=true then temporary files are not deleted.
 function shearer_exit
 {
-	#echo "shearer_exit" "$@" >>"$LOG"
+	shearer_log 3 "shearer_exit $*"
+	if $EXITING; then return; fi
+	EXITING=true
 	$ON_EXIT
 	local EXIT="$1"
 	local MESSAGE="$2"
@@ -112,44 +154,63 @@ function shearer_exit
 # \brief Displays the help and exits the program
 function shearer_help
 {
-	printf "$NAME $VERSION $COPYRIGHT\n\n"
-	printf "This script pings an IP and executes arbitrary commands based on the online/offline status of that IP.\n\n"
-	printf "Usage:\n"
-	printf "  $CODENAME [options]\n"
-	printf "Options:\n"
-	printf "  -h\n"
-	printf "    Display this help message and exit.\n"
-	printf "  -v\n"
-	printf "    Be verbose.\n\n"
-	printf "Example /etc/pingthen.conf with some custom online/offline actions:\n"
-	printf "  REPEAT=0\n"
-	printf "  IP=10.12.1.3\n"
-	printf "  ON_OFFLINE=pingthen_offline\n"
-	printf "  ON_ONLINE=pingthen_online\n"
-	printf "  EMAIL=\"mail@example.com\"\n"
-	printf "  function pingthen_offline\n"
-	printf "  {\n"
-	printf "    echo \"The IP \$IP went offline on \`date\`\" | mail -s \"\`hostname\`: \$IP is offline \`date\`\"\n"
-	printf "  }\n"
-	printf "  function pingthen_online\n"
-	printf "  {\n"
-	printf "    echo \"The IP \$IP went online on \`date\`\" | mail -s \"\`hostname\`: \$IP is online \`date\`\"\n"
-	printf "  }\n"
+	echo "$NAME $VERSION $COPYRIGHT"
+	echo
+	echo "This script pings an IP and executes arbitrary commands based on the up/down status of that IP."
+	echo
+	echo "Usage:"
+	echo "  $CODENAME [options]"
+	echo "Options:"
+	echo "  -h"
+	echo "    Display this help message and exit."
+	echo "  -v #"
+	echo "    Be more verbose."
+	echo
+	echo "Example /etc/pingthen.conf with some custom up/down actions:"
+	echo "  REPEAT=0"
+	echo "  HOSTS=( 192.168.0.10 3 3 on_down on_up while_down false \\"
+	echo "          192.168.0.11 3 3 on_down on_up while_down false )"
+	echo "  EMAIL=mail@example.com"
+	echo "  function on_down"
+	echo "  {"
+	echo "    echo \"\`hostname\`: \$1 went down on \`date\`\" \\"
+	echo "      | mail -s \"\`hostname\`: \$1 went down on \`date\`\" \$EMAIL"
+	echo "  }"
+	echo "  function on_up"
+	echo "  {"
+	echo "    echo \"\`hostname\`: \$1 went up on \`date\`\" \\"
+	echo "      | mail -s \"\`hostname\`: \$1 went up on \`date\`\" \$EMAIL"
+	echo "  }"
+	echo "  function while_down"
+	echo "  {"
+	echo "    echo \"\`hostname\`: \$1 is currently down on \`date\`\" \\"
+	echo "      | mail -s \"\`hostname\`: \$1 is currently down on \`date\`\" \$EMAIL"
+	echo "  }"
 	exit
+}
+
+# \brief Logs messages to syslog with logger
+# \param $1 Only log this message if $VERBOSE is greater than or equal to $1
+# \param $2 The message that will be logged
+function shearer_log
+{
+	if [ $VERBOSE -ge $1 ]; then
+		logger "$CODENAME: $2"
+	fi
 }
 
 #------------------------------------------------------------------------------
 # detect the operating system
 
-shearer_check_dependencies grep hostname mail ping sleep
+shearer_check_dependencies grep hostname ping sleep
 OPERATING_SYSTEM=`uname -s`
 case $OPERATING_SYSTEM in
 	"Linux")
-		shearer_check_dependencies ip
+		shearer_check_dependencies logger ping sleep
 		;;
-#	"OpenBSD")
-#		shearer_check_dependencies cut route tr
-#		;;
+	"OpenBSD")
+		shearer_check_dependencies logger ping sleep
+		;;
 	*)
 		echo "$0: $OPERATING_SYSTEM is currently an unsupported operating system"
 		exit 1
@@ -159,20 +220,24 @@ esac
 # default configuration
 
 DEBUG=false         # Enable debug mode
+VERBOSE=1           # Increase logging verbosity. Range is from 0 to 3 inclusive
 TMP="/tmp"
-IP=127.0.0.1        # The IP address to ping
-PING_DELAY=1        # Delay for 1 second between each ping attempt
-PING_SEND=3         # Ping the gateway 3 times
-PING_TIMEOUT=1      # Time to wait for a response, in seconds
-OFFLINE_ON=3        # If 3 ping attempts fail, then the gateway is considered offline
-ONLINE_ON=3         # If 3 ping attempts reply, then the gateway is considered online
-REPEAT=1            # Repeat execution 1 time. Use 0 for unlimited
-REPEAT_DELAY=1      # How long to pause at the end of each repeat
-VERBOSE=false       # Print out useful information
-ON_EXIT=false       # Run this function on exit
-ON_OFFLINE=false    # The function to run when $IP is offline
-ON_ONLINE=false     # The function to run when $IP is online
-ON_START=false      # Run this function before the pinging begins
+
+#       host       down when  up when  on down  on up  while down  while up
+HOSTS=( 127.0.0.1  3          3        false    false  false       false \
+        127.0.0.2  3          3        false    false  false       false \
+        127.0.0.3  3          3        false    false  false       false )
+
+IP=127.0.0.1      # The IP address to ping
+PING_DELAY=1      # Delay for 1 second between each ping attempt
+PING_SEND=3       # Ping the gateway 3 times
+PING_TIMEOUT=1    # Time to wait for a response, in seconds
+REPEAT=1          # Repeat execution 1 time. Use 0 for unlimited
+REPEAT_DELAY=0    # How long to pause at the end of each repeat
+ON_EXIT=false     # Run this function on exit
+ON_DOWN=false     # The function to run when $IP is down
+ON_UP=false       # The function to run when $IP is up
+ON_START=false    # Run this function before the pinging begins
 
 #------------------------------------------------------------------------------
 # config files
@@ -184,11 +249,11 @@ fi
 #------------------------------------------------------------------------------
 # command line arguments
 
-while getopts "hr:v" OPTION; do
+while getopts "hr:v:" OPTION; do
 	case "$OPTION" in
 		"h") shearer_help;;
 		"r") REPEAT="$OPTARG";;
-		"v") VERBOSE=true;;
+		"v") VERBOSE="$OPTARG";;
 		*) shearer_help;;
 	esac
 done
@@ -197,11 +262,11 @@ shift $(( $OPTIND - 1 ))
 #------------------------------------------------------------------------------
 # prepare environment
 
+EXITING=false
 trap shearer_exit EXIT SIGHUP SIGINT SIGQUIT SIGABRT SIGKILL SIGTERM
 TMP="$TMP/$CODENAME.$$"
 mkdir -p "$TMP"
-LOG="$TMP/log"
-touch "$LOG"
+declare -A HOST_STATE
 
 #------------------------------------------------------------------------------
 # begin execution
@@ -209,8 +274,14 @@ touch "$LOG"
 $ON_START
 REPEATS=$REPEAT
 while [[ $REPEAT -eq 0 || ( $REPEATS -gt 0 ) ]]; do
-	pingthen_test $IP $ON_OFFLINE
-	if $VERBOSE; then echo "Waiting for $REPEAT_DELAY second(s)"; fi
-	sleep $REPEAT_DELAY
+	HOST=0
+	while [ $HOST -lt $((${#HOSTS[*]}/7)) ]; do
+		pingthen_test ${HOSTS[$(($HOST*7+0))]} ${HOSTS[$(($HOST*7+1))]} ${HOSTS[$(($HOST*7+2))]} ${HOSTS[$(($HOST*7+3))]} ${HOSTS[$(($HOST*7+4))]} ${HOSTS[$(($HOST*7+5))]} ${HOSTS[$(($HOST*7+6))]}
+		HOST=$(($HOST+1))
+	done
+	if [ $REPEAT_DELAY -gt 0 ]; then
+		shearer_log 2 "Waiting for $REPEAT_DELAY second(s)"
+		sleep $REPEAT_DELAY
+	fi
 	REPEATS=$(($REPEATS-1))
 done
