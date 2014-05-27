@@ -1,0 +1,81 @@
+# This example config pings all 13 root DNS servers and sends an e-mail when any
+# one of them changes their up/down state.
+# Intersting features:
+#   Sends start/stop notifications
+#   The initial state for each host is set to up
+#   The down trigger:
+#     is very sensitive to ensure a quick reaction
+#     calls on_down when 3 consecutive packets are lost
+#   The up trigger:
+#     requires a large number of replies to ensure stability
+#     calls on_up when 30 consecutive replies are received
+#   All temporary files use the host to prevent clobbering by other threads
+
+#       host            down when  up when  on down  on up  while down  while up
+HOSTS=( 198.41.0.4      3          30       on_down  on_up  false       false \
+        192.228.79.201  3          30       on_down  on_up  false       false \
+        192.33.4.12     3          30       on_down  on_up  false       false \
+        199.7.91.13     3          30       on_down  on_up  false       false \
+        192.203.230.10  3          30       on_down  on_up  false       false \
+        192.5.5.241     3          30       on_down  on_up  false       false \
+        192.112.36.4    3          30       on_down  on_up  false       false \
+        128.63.2.53     3          30       on_down  on_up  false       false \
+        192.36.148.17   3          30       on_down  on_up  false       false \
+        192.58.128.30   3          30       on_down  on_up  false       false \
+        193.0.14.129    3          30       on_down  on_up  false       false \
+        199.7.83.42     3          30       on_down  on_up  false       false \
+        202.12.27.33    3          30       on_down  on_up  false       false )
+
+declare -A HOST_STATE
+HOST_STATE[198.41.0.4]=up
+HOST_STATE[192.228.79.201]=up
+HOST_STATE[192.33.4.12]=up
+HOST_STATE[199.7.91.13]=up
+HOST_STATE[192.203.230.10]=up
+HOST_STATE[192.5.5.241]=up
+HOST_STATE[192.112.36.4]=up
+HOST_STATE[128.63.2.53]=up
+HOST_STATE[192.36.148.17]=up
+HOST_STATE[192.58.128.30]=up
+HOST_STATE[193.0.14.129]=up
+HOST_STATE[199.7.83.42]=up
+HOST_STATE[202.12.27.33]=up
+
+ON_START=on_start
+ON_STOP=on_stop
+
+EMAIL="emergency@example.com"
+
+function on_start
+{
+	local NOW=`date --rfc-3339=seconds`
+	echo "`hostname`: Monitoring started on $NOW" \
+		| mail -s "`hostname`: pingthen: Monitoring started on $NOW" $EMAIL
+}
+
+function on_down
+{  
+	local HOST=$1
+	local DOWN_ON=$2
+	local UP_ON=$3
+	echo "Host $HOST is down. 0/$DOWN_ON packets received." >/tmp/pingthen.$1
+	cat /tmp/pingthen.$1 | mail -s "`hostname`: pingthen: $HOST down on `date --rfc-3339=seconds`" $EMAIL
+	rm -f /tmp/pingthen.$1
+}
+
+function on_up
+{
+	local HOST=$1
+	local DOWN_ON=$2
+	local UP_ON=$3
+	echo "Host $HOST is up. $UP_ON/$UP_ON packets received." >/tmp/pingthen.$1
+	cat /tmp/pingthen.$1 | mail -s "`hostname`: pingthen: $HOST up on `date --rfc-3339=seconds`" $EMAIL
+	rm -f /tmp/pingthen.$1
+}
+
+function on_stop
+{
+	local NOW=`date --rfc-3339=seconds`
+	echo "`hostname`: Monitoring stopped on $NOW" \
+		| mail -s "`hostname`: pingthen: Monitoring stopped on $NOW" $EMAIL
+}

@@ -1,0 +1,58 @@
+# This example config pings servers by hostname and sends an e-mail when any one
+# of them changes their up/down state.
+# Intersting features:
+#   Sends start/stop notifications
+#   Hosts are pinged by hostname instead of IP address
+#   The down trigger:
+#     is very sensitive to ensure a quick reaction
+#     calls on_down when 3 consecutive packets are lost
+#   The up trigger:
+#     requires a large number of replies to ensure stability
+#     calls on_up when 30 consecutive replies are received
+#   All temporary files use the host to prevent clobbering by other threads
+
+#       host            down when  up when  on down  on up  while down  while up
+HOSTS=( google.com      3          30       on_down  on_up  false       false \
+        microsoft.com   3          30       on_down  on_up  false       false \
+        yahoo.com       3          30       on_down  on_up  false       false )
+
+declare -A HOST_STATE
+
+ON_START=on_start
+ON_STOP=on_stop
+
+EMAIL="emergency@example.com"
+
+function on_start
+{
+	local NOW=`date --rfc-3339=seconds`
+	echo "`hostname`: Monitoring started on $NOW" \
+		| mail -s "`hostname`: pingthen: Monitoring started on $NOW" $EMAIL
+}
+
+function on_down
+{  
+	local HOST=$1
+	local DOWN_ON=$2
+	local UP_ON=$3
+	echo "Host $HOST is down. 0/$DOWN_ON packets received." >/tmp/pingthen.$1
+	cat /tmp/pingthen.$1 | mail -s "`hostname`: pingthen: $HOST down on `date --rfc-3339=seconds`" $EMAIL
+	rm -f /tmp/pingthen.$1
+}
+
+function on_up
+{
+	local HOST=$1
+	local DOWN_ON=$2
+	local UP_ON=$3
+	echo "Host $HOST is up. $UP_ON/$UP_ON packets received." >/tmp/pingthen.$1
+	cat /tmp/pingthen.$1 | mail -s "`hostname`: pingthen: $HOST up on `date --rfc-3339=seconds`" $EMAIL
+	rm -f /tmp/pingthen.$1
+}
+
+function on_stop
+{
+	local NOW=`date --rfc-3339=seconds`
+	echo "`hostname`: Monitoring stopped on $NOW" \
+		| mail -s "`hostname`: pingthen: Monitoring stopped on $NOW" $EMAIL
+}
