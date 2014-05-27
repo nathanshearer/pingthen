@@ -30,7 +30,7 @@ VERSION="2.0.0.0"
 # \brief Ping an IP and executes commands based on the result
 # \param $1 The IP address to ping
 # \param $2 If this many consecutive requests are lost, then the state will change to down
-# \param $3 If this many consecutive requests are replied, then the state will change to up
+# \param $3 If this many consecutive replies are received, then the state will change to up
 # \param $4 The function to execute when the state changes to down
 # \param $5 The function to execute when the state changes to up
 # \param $6 The function to execute when the state remains down
@@ -161,6 +161,8 @@ function shearer_help
 	echo "Usage:"
 	echo "  $CODENAME [options]"
 	echo "Options:"
+	echo "  -c pingthen.conf"
+	echo "    Load pingthen.conf after trying /etc/pingthen.conf"
 	echo "  -h"
 	echo "    Display this help message and exit."
 	echo "  -v #"
@@ -168,8 +170,9 @@ function shearer_help
 	echo
 	echo "Example /etc/pingthen.conf with some custom start/stop and up/down actions:"
 	echo "  REPEAT=0"
-	echo "  HOSTS=( 192.168.0.10 3 3 on_down on_up while_down false \\"
-	echo "          192.168.0.11 3 3 on_down on_up while_down false )"
+	echo "  #       host          down when  up when  on down  on up  while down  while up"
+	echo "  HOSTS=( 192.168.0.10  3          3        on_down  on_up  while_down  false \\"
+	echo "          192.168.0.11  3          3        on_down  on_up  while_down  false )"
 	echo "  EMAIL=mail@example.com"
 	echo "  function on_up"
 	echo "  {"
@@ -247,6 +250,7 @@ fi
 
 while getopts "hr:v:" OPTION; do
 	case "$OPTION" in
+		"c") . "$OPTARG";;
 		"h") shearer_help;;
 		"r") REPEAT="$OPTARG";;
 		"v") VERBOSE="$OPTARG";;
