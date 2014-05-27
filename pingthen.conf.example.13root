@@ -11,20 +11,20 @@
 #     calls on_up when 30 consecutive replies are received
 #   All temporary files use the host to prevent clobbering by other threads
 
-#       host            down when  up when  on down  on up  while down  while up
-HOSTS=( 198.41.0.4      3          30       on_down  on_up  false       false \
-        192.228.79.201  3          30       on_down  on_up  false       false \
-        192.33.4.12     3          30       on_down  on_up  false       false \
-        199.7.91.13     3          30       on_down  on_up  false       false \
-        192.203.230.10  3          30       on_down  on_up  false       false \
-        192.5.5.241     3          30       on_down  on_up  false       false \
-        192.112.36.4    3          30       on_down  on_up  false       false \
-        128.63.2.53     3          30       on_down  on_up  false       false \
-        192.36.148.17   3          30       on_down  on_up  false       false \
-        192.58.128.30   3          30       on_down  on_up  false       false \
-        193.0.14.129    3          30       on_down  on_up  false       false \
-        199.7.83.42     3          30       on_down  on_up  false       false \
-        202.12.27.33    3          30       on_down  on_up  false       false )
+#       host            timeout  delay  down when  up when  on down  on up  while down  while up
+HOSTS=( 198.41.0.4      1        1      3          30       on_down  on_up  false       false \
+        192.228.79.201  1        1      3          30       on_down  on_up  false       false \
+        192.33.4.12     1        1      3          30       on_down  on_up  false       false \
+        199.7.91.13     1        1      3          30       on_down  on_up  false       false \
+        192.203.230.10  1        1      3          30       on_down  on_up  false       false \
+        192.5.5.241     1        1      3          30       on_down  on_up  false       false \
+        192.112.36.4    1        1      3          30       on_down  on_up  false       false \
+        128.63.2.53     1        1      3          30       on_down  on_up  false       false \
+        192.36.148.17   1        1      3          30       on_down  on_up  false       false \
+        192.58.128.30   1        1      3          30       on_down  on_up  false       false \
+        193.0.14.129    1        1      3          30       on_down  on_up  false       false \
+        199.7.83.42     1        1      3          30       on_down  on_up  false       false \
+        202.12.27.33    1        1      3          30       on_down  on_up  false       false )
 
 declare -A HOST_STATE
 HOST_STATE[198.41.0.4]=up
