@@ -25,9 +25,9 @@
 NAME="pingthen"
 CODENAME="pingthen"
 COPYRIGHT="Copyright (C) 2013 Nathan Shearer"
-VERSION="2.0.0.0"
+VERSION="3.0.0.0"
 
-# \brief Ping an IP and executes commands based on the result
+# \brief Ping a host and execute functions depending on the results
 # \param $1 The IP address to ping
 # \param $2 If this many consecutive requests are lost, then the state will change to down
 # \param $3 If this many consecutive replies are received, then the state will change to up
@@ -35,9 +35,9 @@ VERSION="2.0.0.0"
 # \param $5 The function to execute when the state changes to up
 # \param $6 The function to execute when the state remains down
 # \param $7 The function to execute when the state remains up
-function pingthen_test
+function pingthen_monitor
 {
-	shearer_log 3 "pingthen_test $*"
+	shearer_log 5 "pingthen_monitor $*"
 	# assign arguments
 	local HOST="$1"
 	local DOWN_ON="$2"
@@ -46,67 +46,96 @@ function pingthen_test
 	local ON_UP="$5"
 	local WHILE_DOWN="$6"
 	local WHILE_UP="$7"
-	# ping the IP and gather metrics
-	local PING_RECEIVED=0
-	local PING_LOST=0
-	local PING_SENT=0
-	PING_ATTEMPT=0
-	while [ $PING_ATTEMPT -lt $DOWN_ON -o $PING_ATTEMPT -lt $UP_ON ]; do
+	# statistics
+	local TOTAL_RECEIVED=0
+	local TOTAL_LOST=0
+	local TOTAL_SENT=0
+	local WINDOW_RECEIVED=0
+	local WINDOW_LOST=0
+	# ping loop
+	while true; do
 		ping -w $PING_TIMEOUT -c 1 $HOST >/dev/null 2>/dev/null
 		local PING_RETURN=$?
 		if [ $PING_RETURN -eq 0 ]; then
-			PING_RECEIVED=$(($PING_RECEIVED+1))
+			TOTAL_RECEIVED=$(($TOTAL_RECEIVED+1))
+			if [ $WINDOW_RECEIVED -lt $UP_ON ]; then
+				WINDOW_RECEIVED=$(($WINDOW_RECEIVED+1))
+			fi
+			WINDOW_LOST=0
 		fi
 		if [ $PING_RETURN -ne 0 ]; then
-			PING_LOST=$(($PING_LOST+1))
+			TOTAL_LOST=$(($TOTAL_LOST+1))
+			WINDOW_RECEIVED=0
+			if [ $WINDOW_LOST -lt $DOWN_ON ]; then
+				WINDOW_LOST=$(($WINDOW_LOST+1))
+			fi
 		fi
-		PING_SENT=$(($PING_SENT+1))
+		TOTAL_SENT=$(($TOTAL_SENT+1))
 		sleep $PING_DELAY
-		PING_ATTEMPT=$(($PING_ATTEMPT+1))
+		shearer_log 3 "$HOST: $WINDOW_RECEIVED/$UP_ON received, $WINDOW_LOST/$DOWN_ON lost"
+		shearer_log 4 "$HOST totals: $TOTAL_RECEIVED received, $TOTAL_LOST lost, $TOTAL_SENT transmitted"
+		# change state
+		if [ $WINDOW_RECEIVED -ge $UP_ON ]; then
+			case ${HOST_STATE[$HOST]} in
+				"")
+					HOST_STATE[$HOST]="up"
+					local MESSAGE="Detected host $HOST state is up, $WINDOW_RECEIVED/$UP_ON packets received"
+					if [ "$ACT_ON_DETECT" = "true" -a "$ON_UP" != "false" ]; then
+						shearer_log 2 "$MESSAGE, Executing $ON_UP"
+						$ON_UP $HOST $DOWN_ON $UP_ON
+					else
+						shearer_log 2 "$MESSAGE"
+					fi
+					;;
+				"up")
+					if [ "$WHILE_UP" != "false" ]; then
+						shearer_log 2 "Host $HOST is up, $WINDOW_RECEIVED/$UP_ON packets received, Executing $WHILE_UP"
+						$WHILE_UP $HOST $DOWN_ON $UP_ON
+					fi
+					;;
+				"down")
+					HOST_STATE[$HOST]="up"
+					MESSAGE="Host $HOST is up, $WINDOW_RECEIVED/$UP_ON packets received"
+					if [ "$ON_UP" != "false" ]; then
+						shearer_log 2 "$MESSAGE, Executing $ON_UP"
+						$ON_UP $HOST $DOWN_ON $UP_ON
+					else
+						shearer_log 2 "$MESSAGE"
+					fi
+					;;
+			esac
+		fi
+		if [ $WINDOW_LOST -ge $DOWN_ON ]; then
+			case ${HOST_STATE[$HOST]} in
+				"")
+					HOST_STATE[$HOST]="down"
+					local MESSAGE="Detected host $HOST state is down, 0/$DOWN_ON packets received"
+					if [ "$ACT_ON_DETECT" = "true" -a "$ON_DOWN" != "false" ]; then
+						shearer_log 2 "$MESSAGE, Executing $ON_DOWN"
+						$ON_DOWN $HOST $DOWN_ON $UP_ON
+					else
+						shearer_log 2 "$MESSAGE"
+					fi
+					;;
+				"up")
+					HOST_STATE[$HOST]="down"
+					local MESSAGE="Host $HOST is down, 0/$DOWN_ON packets received"
+					if [ "$ON_DOWN" != "false" ]; then
+						shearer_log 2 "$MESSAGE, Executing $ON_DOWN"
+						$ON_DOWN $HOST $DOWN_ON $UP_ON
+					else
+						shearer_log 2 "$MESSAGE"
+					fi
+					;;
+				"down")
+					if [ "$WHILE_DOWN" != "false" ]; then
+						shearer_log 2 "Host $HOST is down, 0/$DOWN_ON packets received, Executing $WHILE_DOWN"
+						$WHILE_DOWN $HOST $DOWN_ON $UP_ON
+					fi
+					;;
+			esac
+		fi
 	done
-	shearer_log 2 "PING $HOST, $PING_SENT packets transmitted, $PING_RECEIVED received, $PING_LOST lost"
-	if [ $PING_RECEIVED -ge $UP_ON ]; then
-		case ${HOST_STATE[$HOST]} in
-			"")
-				HOST_STATE[$HOST]="up"
-				shearer_log 1 "Detected host $HOST state is up"
-				;;
-			"up")
-				if [ "$WHILE_UP" != "false" ]; then
-					shearer_log 1 "Host $HOST is currently up. Executing $WHILE_UP"
-					$WHILE_UP $HOST
-				fi
-				;;
-			"down")
-				HOST_STATE[$HOST]="up"
-				if [ "$ON_UP" != "false" ]; then
-					shearer_log 1 "Host $HOST is now up. Executing $ON_UP"
-					$ON_UP $HOST
-				fi
-				;;
-		esac
-	fi
-	if [ $PING_LOST -ge $DOWN_ON ]; then
-		case ${HOST_STATE[$HOST]} in
-			"")
-				HOST_STATE[$HOST]="down"
-				shearer_log 1 "Detected host $HOST state is down"
-				;;
-			"up")
-				HOST_STATE[$HOST]="down"
-				if [ "$ON_DOWN" != "false" ]; then
-					shearer_log 1 "Host $HOST is now down. Executing $ON_DOWN"
-					$ON_DOWN $HOST
-				fi
-				;;
-			"down")
-				if [ "$WHILE_DOWN" != "false" ]; then
-					shearer_log 1 "Host $HOST is currently down. Executing $WHILE_DOWN"
-					$WHILE_DOWN $HOST
-				fi
-				;;
-		esac
-	fi
 }
 
 # \brief Ensures dependencies are present
@@ -128,10 +157,13 @@ function shearer_check_dependencies
 # If DEBUG=true then temporary files are not deleted.
 function shearer_exit
 {
-	shearer_log 3 "shearer_exit $*"
+	shearer_log 4 "shearer_exit $*"
 	if $EXITING; then return; fi
 	EXITING=true
+	shearer_log 1 "Monitoring stopping"
 	$ON_STOP
+	kill "${HOST_THREADS[@]}"
+	shearer_log 1 "Monitoring stopped"
 	local EXIT="$1"
 	local MESSAGE="$2"
 	if [ "$EXIT" = "" ]; then
@@ -166,29 +198,13 @@ function shearer_help
 	echo "  -h"
 	echo "    Display this help message and exit."
 	echo "  -v #"
-	echo "    Be more verbose."
-	echo
-	echo "Example /etc/pingthen.conf with some custom start/stop and up/down actions:"
-	echo "  REPEAT=0"
-	echo "  #       host          down when  up when  on down  on up  while down  while up"
-	echo "  HOSTS=( 192.168.0.10  3          3        on_down  on_up  while_down  false \\"
-	echo "          192.168.0.11  3          3        on_down  on_up  while_down  false )"
-	echo "  EMAIL=mail@example.com"
-	echo "  function on_up"
-	echo "  {"
-	echo "    echo \"\`hostname\`: \$1 went up on \`date\`\" \\"
-	echo "      | mail -s \"\`hostname\`: \$1 went up on \`date\`\" \$EMAIL"
-	echo "  }"
-	echo "  function on_down"
-	echo "  {"
-	echo "    echo \"\`hostname\`: \$1 went down on \`date\`\" \\"
-	echo "      | mail -s \"\`hostname\`: \$1 went down on \`date\`\" \$EMAIL"
-	echo "  }"
-	echo "  function while_down"
-	echo "  {"
-	echo "    echo \"\`hostname\`: \$1 is currently down on \`date\`\" \\"
-	echo "      | mail -s \"\`hostname\`: \$1 is currently down on \`date\`\" \$EMAIL"
-	echo "  }"
+	echo "    Use more or less verbose logging. Valid values are from 0 to 4 inclusive:"
+	echo "      0  No logging output"
+	echo "      1  Log the start/stop of this script"
+	echo "      2  Default. Log host state changes"
+	echo "      3  Log the moving window results after each ping request"
+	echo "      4  Log total results after each ping request"
+	echo "      5  Log each function call with arguments"
 	exit
 }
 
@@ -222,19 +238,18 @@ esac
 #------------------------------------------------------------------------------
 # default configuration
 
-DEBUG=false         # Enable debug mode
-VERBOSE=1           # Increase logging verbosity. Range is from 0 to 3 inclusive
+ACT_ON_DETECT=true   # Call the up/down functions when host state is detected
+DEBUG=false          # Enable debug mode
+VERBOSE=2            # Increase logging verbosity
 TMP="/tmp"
 
 #       host       down when  up when  on down  on up  while down  while up
-HOSTS=( 127.0.0.1  3          3        false    false  false       false \
-        127.0.0.2  3          3        false    false  false       false \
-        127.0.0.3  3          3        false    false  false       false )
+HOSTS=( 127.0.0.1  3          5        false    false  false       false \
+        127.0.0.2  3          5        false    false  false       false \
+        127.0.0.3  3          5        false    false  false       false )
 
 PING_DELAY=1      # Delay for 1 second between each ping attempt
 PING_TIMEOUT=1    # Time to wait for a ping response, in seconds
-REPEAT=1          # Repeat execution 1 time. Use 0 for unlimited
-REPEAT_DELAY=0    # How long to pause at the end of each repeat
 ON_START=false    # Run this function when pingthen starts
 ON_STOP=false     # Run this function when pingthen stops
 
@@ -248,11 +263,10 @@ fi
 #------------------------------------------------------------------------------
 # command line arguments
 
-while getopts "hr:v:" OPTION; do
+while getopts "c:hv:" OPTION; do
 	case "$OPTION" in
 		"c") . "$OPTARG";;
 		"h") shearer_help;;
-		"r") REPEAT="$OPTARG";;
 		"v") VERBOSE="$OPTARG";;
 		*) shearer_help;;
 	esac
@@ -271,17 +285,14 @@ declare -A HOST_STATE
 #------------------------------------------------------------------------------
 # begin execution
 
+shearer_log 1 "Monitoring starting"
 $ON_START
-REPEATS=$REPEAT
-while [[ $REPEAT -eq 0 || ( $REPEATS -gt 0 ) ]]; do
-	HOST=0
-	while [ $HOST -lt $((${#HOSTS[*]}/7)) ]; do
-		pingthen_test ${HOSTS[$(($HOST*7+0))]} ${HOSTS[$(($HOST*7+1))]} ${HOSTS[$(($HOST*7+2))]} ${HOSTS[$(($HOST*7+3))]} ${HOSTS[$(($HOST*7+4))]} ${HOSTS[$(($HOST*7+5))]} ${HOSTS[$(($HOST*7+6))]}
-		HOST=$(($HOST+1))
-	done
-	if [ $REPEAT_DELAY -gt 0 ]; then
-		shearer_log 2 "Waiting for $REPEAT_DELAY second(s)"
-		sleep $REPEAT_DELAY
-	fi
-	REPEATS=$(($REPEATS-1))
+shearer_log 1 "Monitoring started"
+unset HOST_THREADS
+HOST=0
+while [ $HOST -lt $((${#HOSTS[*]}/7)) ]; do
+	pingthen_monitor ${HOSTS[$(($HOST*7+0))]} ${HOSTS[$(($HOST*7+1))]} ${HOSTS[$(($HOST*7+2))]} ${HOSTS[$(($HOST*7+3))]} ${HOSTS[$(($HOST*7+4))]} ${HOSTS[$(($HOST*7+5))]} ${HOSTS[$(($HOST*7+6))]} &
+	HOST_THREADS[${#HOST_THREADS[@]}]=$!
+	HOST=$(($HOST+1))
 done
+wait "${HOST_THREADS[@]}"
