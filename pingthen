@@ -58,8 +58,14 @@ function pingthen_monitor
 	local WINDOW_LOST=0
 	# ping loop
 	while true; do
-		ping -w $TIMEOUT -c 1 $HOST >/dev/null 2>/dev/null
-		local PING_RETURN=$?
+		# if $HOST is a MAC address, then ping its first IPv4 address
+		if echo "$HOST" | grep -E "([0-9a-fA-F]{2}[:\\-]){5}[0-9a-fA-F]{2}" >/dev/null; then
+			ping -w $TIMEOUT -c 1 `pingthen_mac2ip "$HOST" | head -n 1` >/dev/null 2>/dev/null
+			local PING_RETURN=$?
+		else
+			ping -w $TIMEOUT -c 1 $HOST >/dev/null 2>/dev/null
+			local PING_RETURN=$?
+		fi
 		if [ $PING_RETURN -eq 0 ]; then
 			TOTAL_RECEIVED=$(($TOTAL_RECEIVED+1))
 			if [ $WINDOW_RECEIVED -lt $UP_ON ]; then
@@ -222,6 +228,24 @@ function pingthen_log
 	fi
 }
 
+# \brief Converts a MAC address into an IPv4 address by probing all unrouted subnets
+# \param $1 The MAC address to convert
+#
+# Prints out each IPv4 address assigned to the MAC address or nothing if the conversion failed
+function pingthen_mac2ip
+{
+	local MAC="$1"
+	local SUBNETS=`ip route | grep -E "[0-9]+.[0-9]+.[0-9]+.[0-9]+/[0-9]+ dev" | grep -v "127.0.0.0/8" | cut -d " " -f 1`
+	# ping all ip addresses to update the arp cache
+	unset FPING_THREADS
+	for SUBNET in $SUBNETS; do
+		fping -c 1 -g $SUBNET -i 5 >/dev/null 2>/dev/null &
+		FPING_THREADS[${#FPING_THREADS[@]}]=$!
+	done
+	wait "${FPING_THREADS[@]}"
+	arp -n | grep -i "$MAC" | cut -d " " -f 1 | sort -t . -k 1,1n -k 2,2n -k 3,3n -k 4,4n
+}
+
 #------------------------------------------------------------------------------
 # detect the operating system
 
@@ -229,7 +253,7 @@ pingthen_check_dependencies grep hostname
 OPERATING_SYSTEM=`uname -s`
 case $OPERATING_SYSTEM in
 	"Linux")
-		pingthen_check_dependencies logger ping sleep
+		pingthen_check_dependencies arp cut fping grep ip logger ping sleep sort
 		;;
 	"OpenBSD")
 		pingthen_check_dependencies logger ping sleep
