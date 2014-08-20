@@ -39,7 +39,7 @@ VERSION="3.0.0.0"
 # \param $9 The function to execute when the state remains up
 function pingthen_monitor
 {
-	shearer_log 5 "pingthen_monitor $*"
+	pingthen_log 5 "pingthen_monitor $*"
 	# assign arguments
 	local HOST="$1"
 	local TIMEOUT="$2"
@@ -76,8 +76,8 @@ function pingthen_monitor
 		fi
 		TOTAL_SENT=$(($TOTAL_SENT+1))
 		sleep $DELAY
-		shearer_log 3 "$HOST: $WINDOW_RECEIVED/$UP_ON received, $WINDOW_LOST/$DOWN_ON lost"
-		shearer_log 4 "$HOST totals: $TOTAL_RECEIVED received, $TOTAL_LOST lost, $TOTAL_SENT transmitted"
+		pingthen_log 3 "$HOST: $WINDOW_RECEIVED/$UP_ON received, $WINDOW_LOST/$DOWN_ON lost"
+		pingthen_log 4 "$HOST totals: $TOTAL_RECEIVED received, $TOTAL_LOST lost, $TOTAL_SENT transmitted"
 		# change state
 		if [ $WINDOW_RECEIVED -ge $UP_ON ]; then
 			case ${HOST_STATE[$HOST]} in
@@ -85,15 +85,15 @@ function pingthen_monitor
 					HOST_STATE[$HOST]="up"
 					local MESSAGE="Detected host $HOST state is up, $WINDOW_RECEIVED/$UP_ON packets received"
 					if [ "$ACT_ON_DETECT" = "true" -a "$ON_UP" != "false" ]; then
-						shearer_log 2 "$MESSAGE, Executing $ON_UP"
+						pingthen_log 2 "$MESSAGE, Executing $ON_UP"
 						$ON_UP $HOST $DOWN_ON $UP_ON
 					else
-						shearer_log 2 "$MESSAGE"
+						pingthen_log 2 "$MESSAGE"
 					fi
 					;;
 				"up")
 					if [ "$WHILE_UP" != "false" ]; then
-						shearer_log 2 "Host $HOST is up, $WINDOW_RECEIVED/$UP_ON packets received, Executing $WHILE_UP"
+						pingthen_log 2 "Host $HOST is up, $WINDOW_RECEIVED/$UP_ON packets received, Executing $WHILE_UP"
 						$WHILE_UP $HOST $DOWN_ON $UP_ON
 					fi
 					;;
@@ -101,10 +101,10 @@ function pingthen_monitor
 					HOST_STATE[$HOST]="up"
 					MESSAGE="Host $HOST is up, $WINDOW_RECEIVED/$UP_ON packets received"
 					if [ "$ON_UP" != "false" ]; then
-						shearer_log 2 "$MESSAGE, Executing $ON_UP"
+						pingthen_log 2 "$MESSAGE, Executing $ON_UP"
 						$ON_UP $HOST $DOWN_ON $UP_ON
 					else
-						shearer_log 2 "$MESSAGE"
+						pingthen_log 2 "$MESSAGE"
 					fi
 					;;
 			esac
@@ -115,25 +115,25 @@ function pingthen_monitor
 					HOST_STATE[$HOST]="down"
 					local MESSAGE="Detected host $HOST state is down, 0/$DOWN_ON packets received"
 					if [ "$ACT_ON_DETECT" = "true" -a "$ON_DOWN" != "false" ]; then
-						shearer_log 2 "$MESSAGE, Executing $ON_DOWN"
+						pingthen_log 2 "$MESSAGE, Executing $ON_DOWN"
 						$ON_DOWN $HOST $DOWN_ON $UP_ON
 					else
-						shearer_log 2 "$MESSAGE"
+						pingthen_log 2 "$MESSAGE"
 					fi
 					;;
 				"up")
 					HOST_STATE[$HOST]="down"
 					local MESSAGE="Host $HOST is down, 0/$DOWN_ON packets received"
 					if [ "$ON_DOWN" != "false" ]; then
-						shearer_log 2 "$MESSAGE, Executing $ON_DOWN"
+						pingthen_log 2 "$MESSAGE, Executing $ON_DOWN"
 						$ON_DOWN $HOST $DOWN_ON $UP_ON
 					else
-						shearer_log 2 "$MESSAGE"
+						pingthen_log 2 "$MESSAGE"
 					fi
 					;;
 				"down")
 					if [ "$WHILE_DOWN" != "false" ]; then
-						shearer_log 2 "Host $HOST is down, 0/$DOWN_ON packets received, Executing $WHILE_DOWN"
+						pingthen_log 2 "Host $HOST is down, 0/$DOWN_ON packets received, Executing $WHILE_DOWN"
 						$WHILE_DOWN $HOST $DOWN_ON $UP_ON
 					fi
 					;;
@@ -144,7 +144,7 @@ function pingthen_monitor
 
 # \brief Ensures dependencies are present
 # \param $@ The dependencies to check for
-function shearer_check_dependencies
+function pingthen_check_dependencies
 {
 	for TOOL in "$@"; do
 		if ! type "$TOOL" >/dev/null 2>/dev/null; then
@@ -159,15 +159,15 @@ function shearer_check_dependencies
 # \param $2 The exit message
 #
 # If DEBUG=true then temporary files are not deleted.
-function shearer_exit
+function pingthen_exit
 {
-	shearer_log 4 "shearer_exit $*"
+	pingthen_log 4 "pingthen_exit $*"
 	if $EXITING; then return; fi
 	EXITING=true
-	shearer_log 1 "Monitoring stopping"
+	pingthen_log 1 "Monitoring stopping"
 	$ON_STOP
 	kill "${HOST_THREADS[@]}"
-	shearer_log 1 "Monitoring stopped"
+	pingthen_log 1 "Monitoring stopped"
 	local EXIT="$1"
 	local MESSAGE="$2"
 	if [ "$EXIT" = "" ]; then
@@ -188,7 +188,7 @@ function shearer_exit
 }
 
 # \brief Displays the help and exits the program
-function shearer_help
+function pingthen_help
 {
 	echo "$NAME $VERSION $COPYRIGHT"
 	echo
@@ -215,7 +215,7 @@ function shearer_help
 # \brief Logs messages to syslog with logger
 # \param $1 Only log this message if $VERBOSE is greater than or equal to $1
 # \param $2 The message that will be logged
-function shearer_log
+function pingthen_log
 {
 	if [ $VERBOSE -ge $1 ]; then
 		logger "$CODENAME: $2"
@@ -225,14 +225,14 @@ function shearer_log
 #------------------------------------------------------------------------------
 # detect the operating system
 
-shearer_check_dependencies grep hostname
+pingthen_check_dependencies grep hostname
 OPERATING_SYSTEM=`uname -s`
 case $OPERATING_SYSTEM in
 	"Linux")
-		shearer_check_dependencies logger ping sleep
+		pingthen_check_dependencies logger ping sleep
 		;;
 	"OpenBSD")
-		shearer_check_dependencies logger ping sleep
+		pingthen_check_dependencies logger ping sleep
 		;;
 	*)
 		echo "$0: $OPERATING_SYSTEM is currently an unsupported operating system"
@@ -268,9 +268,9 @@ fi
 while getopts "c:hv:" OPTION; do
 	case "$OPTION" in
 		"c") . "$OPTARG";;
-		"h") shearer_help;;
+		"h") pingthen_help;;
 		"v") VERBOSE="$OPTARG";;
-		*) shearer_help;;
+		*) pingthen_help;;
 	esac
 done
 shift $(( $OPTIND - 1 ))
@@ -279,7 +279,7 @@ shift $(( $OPTIND - 1 ))
 # prepare environment
 
 EXITING=false
-trap shearer_exit EXIT SIGHUP SIGINT SIGQUIT SIGABRT SIGKILL SIGTERM
+trap pingthen_exit EXIT SIGHUP SIGINT SIGQUIT SIGABRT SIGKILL SIGTERM
 TMP="$TMP/$CODENAME.$$"
 mkdir -p "$TMP"
 declare -A HOST_STATE
@@ -287,9 +287,9 @@ declare -A HOST_STATE
 #------------------------------------------------------------------------------
 # begin execution
 
-shearer_log 1 "Monitoring starting"
+pingthen_log 1 "Monitoring starting"
 $ON_START
-shearer_log 1 "Monitoring started"
+pingthen_log 1 "Monitoring started"
 unset HOST_THREADS
 HOST=0
 while [ $HOST -lt $((${#HOSTS[*]}/9)) ]; do
