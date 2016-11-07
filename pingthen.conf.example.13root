@@ -2,7 +2,7 @@
 # one of them changes their up/down state.
 # Intersting features:
 #   Sends start/stop notifications
-#   The initial state for each host is set to up
+#   The up/down functions are not called when detecting the initial host state
 #   The down trigger:
 #     is very sensitive to ensure a quick reaction
 #     calls on_down when 3 consecutive packets are lost
@@ -11,35 +11,22 @@
 #     calls on_up when 30 consecutive replies are received
 #   All temporary files use the host to prevent clobbering by other threads
 
-#       host            timeout  delay  down when  up when  on down  on up  while down  while up
-HOSTS=( 198.41.0.4      1000     1000   3          30       on_down  on_up  false       false \
-        192.228.79.201  1000     1000   3          30       on_down  on_up  false       false \
-        192.33.4.12     1000     1000   3          30       on_down  on_up  false       false \
-        199.7.91.13     1000     1000   3          30       on_down  on_up  false       false \
-        192.203.230.10  1000     1000   3          30       on_down  on_up  false       false \
-        192.5.5.241     1000     1000   3          30       on_down  on_up  false       false \
-        192.112.36.4    1000     1000   3          30       on_down  on_up  false       false \
-        128.63.2.53     1000     1000   3          30       on_down  on_up  false       false \
-        192.36.148.17   1000     1000   3          30       on_down  on_up  false       false \
-        192.58.128.30   1000     1000   3          30       on_down  on_up  false       false \
-        193.0.14.129    1000     1000   3          30       on_down  on_up  false       false \
-        199.7.83.42     1000     1000   3          30       on_down  on_up  false       false \
-        202.12.27.33    1000     1000   3          30       on_down  on_up  false       false )
+#       host                timeout  delay  down when  up when  on down  on up  while down  while up
+HOSTS=( a.root-servers.net  1000     1000   3          30       on_down  on_up  false       false \
+        b.root-servers.net  1000     1000   3          30       on_down  on_up  false       false \
+        c.root-servers.net  1000     1000   3          30       on_down  on_up  false       false \
+        d.root-servers.net  1000     1000   3          30       on_down  on_up  false       false \
+        e.root-servers.net  1000     1000   3          30       on_down  on_up  false       false \
+        f.root-servers.net  1000     1000   3          30       on_down  on_up  false       false \
+        g.root-servers.net  1000     1000   3          30       on_down  on_up  false       false \
+        g.root-servers.net  1000     1000   3          30       on_down  on_up  false       false \
+        i.root-servers.net  1000     1000   3          30       on_down  on_up  false       false \
+        j.root-servers.net  1000     1000   3          30       on_down  on_up  false       false \
+        k.root-servers.net  1000     1000   3          30       on_down  on_up  false       false \
+        l.root-servers.net  1000     1000   3          30       on_down  on_up  false       false \
+        m.root-servers.net  1000     1000   3          30       on_down  on_up  false       false )
 
-declare -A HOST_STATE
-HOST_STATE[198.41.0.4]=up
-HOST_STATE[192.228.79.201]=up
-HOST_STATE[192.33.4.12]=up
-HOST_STATE[199.7.91.13]=up
-HOST_STATE[192.203.230.10]=up
-HOST_STATE[192.5.5.241]=up
-HOST_STATE[192.112.36.4]=up
-HOST_STATE[128.63.2.53]=up
-HOST_STATE[192.36.148.17]=up
-HOST_STATE[192.58.128.30]=up
-HOST_STATE[193.0.14.129]=up
-HOST_STATE[199.7.83.42]=up
-HOST_STATE[202.12.27.33]=up
+ACT_ON_DETECT=false
 
 ON_START=on_start
 ON_STOP=on_stop

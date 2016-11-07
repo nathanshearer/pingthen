@@ -1,31 +1,10 @@
 #!/usr/bin/env bash
 
-#----------------------------------------------------------------------------
-# pingthen
-# Copyright (C) 2013 Nathan Shearer
-#
-# This program is free software; you can redistribute it and/or modify it
-# under the terms of the GNU General Public License version 2 as published by
-# the Free Software Foundation.
-#
-# This program is distributed in the hope that it will be useful, but WITHOUT
-# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-# FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-# more details.
-#
-# You should have received a copy of the GNU General Public License along
-# with this program; if not, write to:
-#   The Free Software Foundation Inc.
-#   51 Franklin Street
-#   Fifth Floor
-#   Boston, MA
-#   02110-1301
-#   USA
-
 NAME="pingthen"
 CODENAME="pingthen"
 COPYRIGHT="Copyright (C) 2013 Nathan Shearer"
-VERSION="4.0.0.0"
+LICENSE="GNU General Public License 2.0"
+VERSION="5.0.0.0"
 
 # \brief Ping a host and execute functions depending on the results
 # \param $1 The timeout in miliseconds to wait for a ping respones
@@ -196,25 +175,31 @@ function pingthen_exit
 # \brief Displays the help and exits the program
 function pingthen_help
 {
-	echo "$NAME $VERSION $COPYRIGHT"
-	echo
-	echo "This script pings an IP and executes arbitrary commands based on the up/down status of that IP."
+	#     01234567890123456789012345678901234567890123456789012345678901234567890123456789
+	echo "Synopsis:"
+	echo "  Pings one or more hosts then act on up/down events"
 	echo
 	echo "Usage:"
 	echo "  $CODENAME [options]"
+	echo
 	echo "Options:"
 	echo "  -c pingthen.conf"
 	echo "    Load pingthen.conf after trying /etc/pingthen.conf"
 	echo "  -h"
 	echo "    Display this help message and exit."
 	echo "  -v #"
-	echo "    Use more or less verbose logging. Valid values are from 0 to 4 inclusive:"
+	echo "    Use more or less verbose logging. Valid values are from 0 to 5 inclusive:"
 	echo "      0  No logging output"
 	echo "      1  Log the start/stop of this script"
 	echo "      2  Default. Log host state changes"
 	echo "      3  Log the moving window results after each ping request"
 	echo "      4  Log total results after each ping request"
 	echo "      5  Log each function call with arguments"
+	echo
+	echo "Version:"
+	echo "  $NAME $VERSION"
+	echo "  $COPYRIGHT"
+	echo "  Licensed under $LICENSE"
 	exit
 }
 
@@ -255,9 +240,9 @@ case $OPERATING_SYSTEM in
 	"Linux")
 		pingthen_check_dependencies arp cut fping grep ip logger ping sleep sort
 		;;
-	"OpenBSD")
-		pingthen_check_dependencies logger ping sleep
-		;;
+	#"OpenBSD")
+		#pingthen_check_dependencies logger ping sleep
+		#;;
 	*)
 		echo "$0: $OPERATING_SYSTEM is currently an unsupported operating system"
 		exit 1
@@ -285,19 +270,34 @@ ON_STOP=false     # Run this function when pingthen stops
 if [ -r /etc/$CODENAME.conf ]; then
 	. /etc/$CODENAME.conf
 fi
+if [ -r ~/.$CODENAME.conf ]; then
+	. ~/.$CODENAME.conf
+fi
 
 #------------------------------------------------------------------------------
 # command line arguments
 
-while getopts "c:hv:" OPTION; do
-	case "$OPTION" in
-		"c") . "$OPTARG";;
-		"h") pingthen_help;;
-		"v") VERBOSE="$OPTARG";;
-		*) pingthen_help;;
+THIS="$0"
+while [ $# -ne 0 ]; do
+	case "$1" in
+		"-c"|"--config")
+			. "$2"
+			shift 2
+			;;
+		"-h"|"--help")
+			pingthen_help
+			exit
+			;;
+		"-v"|"--verbose")
+			VERBOSE="$2"
+			shift 2
+			;;
+		*)
+			pingthen_help
+			exit
+			;;
 	esac
 done
-shift $(( $OPTIND - 1 ))
 
 #------------------------------------------------------------------------------
 # prepare environment
