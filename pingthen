@@ -25,11 +25,11 @@
 NAME="pingthen"
 CODENAME="pingthen"
 COPYRIGHT="Copyright (C) 2013 Nathan Shearer"
-VERSION="3.0.0.0"
+VERSION="4.0.0.0"
 
 # \brief Ping a host and execute functions depending on the results
-# \param $1 The timeout in seconds to wait for a ping respones
-# \param $2 The delay in seconds to wait between each ping
+# \param $1 The timeout in miliseconds to wait for a ping respones
+# \param $2 The delay in miliseconds to wait between each ping
 # \param $3 The IP address to ping
 # \param $4 If this many consecutive requests are lost, then the state will change to down
 # \param $5 If this many consecutive replies are received, then the state will change to up
@@ -43,7 +43,7 @@ function pingthen_monitor
 	# assign arguments
 	local HOST="$1"
 	local TIMEOUT="$2"
-	local DELAY="$3"
+	local DELAY=$(echo "scale=3;$3/1000" | bc)
 	local DOWN_ON="$4"
 	local UP_ON="$5"
 	local ON_DOWN="$6"
@@ -60,12 +60,12 @@ function pingthen_monitor
 	while true; do
 		# if $HOST is a MAC address, then ping its first IPv4 address
 		if echo "$HOST" | grep -E "([0-9a-fA-F]{2}[:\\-]){5}[0-9a-fA-F]{2}" >/dev/null; then
-			ping -w $TIMEOUT -c 1 `pingthen_mac2ip "$HOST" | head -n 1` >/dev/null 2>/dev/null
-			local PING_RETURN=$?
+			local HOST_IPV4=`pingthen_mac2ip "$HOST" | head -n 1`
 		else
-			ping -w $TIMEOUT -c 1 $HOST >/dev/null 2>/dev/null
-			local PING_RETURN=$?
+			local HOST_IPV4="$HOST"
 		fi
+		fping -b 1472 -c 1 -q -r 0 -t $TIMEOUT $HOST_IPV4 >/dev/null 2>/dev/null
+		local PING_RETURN=$?
 		if [ $PING_RETURN -eq 0 ]; then
 			TOTAL_RECEIVED=$(($TOTAL_RECEIVED+1))
 			if [ $WINDOW_RECEIVED -lt $UP_ON ]; then
@@ -272,9 +272,9 @@ VERBOSE=2            # Increase logging verbosity
 TMP="/tmp"
 
 #       host       timeout  delay  down when  up when  on down  on up  while down  while up
-HOSTS=( 127.0.0.1  1        1      3          5        false    false  false       false \
-        127.0.0.2  1        1      3          5        false    false  false       false \
-        127.0.0.3  1        1      3          5        false    false  false       false )
+HOSTS=( 127.0.0.1  1000     1000   3          5        false    false  false       false \
+        127.0.0.2  1000     1000   3          5        false    false  false       false \
+        127.0.0.3  1000     1000   3          5        false    false  false       false )
 
 ON_START=false    # Run this function when pingthen starts
 ON_STOP=false     # Run this function when pingthen stops

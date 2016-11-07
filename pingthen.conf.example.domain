@@ -12,9 +12,9 @@
 #   All temporary files use the host to prevent clobbering by other threads
 
 #       host            timeout  delay  down when  up when  on down  on up  while down  while up
-HOSTS=( google.com      1        1      3          30       on_down  on_up  false       false \
-        microsoft.com   1        1      3          30       on_down  on_up  false       false \
-        yahoo.com       1        1      3          30       on_down  on_up  false       false )
+HOSTS=( google.com      1000     1000   3          30       on_down  on_up  false       false \
+        microsoft.com   1000     1000   3          30       on_down  on_up  false       false \
+        yahoo.com       1000     1000   3          30       on_down  on_up  false       false )
 
 declare -A HOST_STATE
 
