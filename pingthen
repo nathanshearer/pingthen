@@ -177,7 +177,7 @@ function pingthen_help
 {
 	#     01234567890123456789012345678901234567890123456789012345678901234567890123456789
 	echo "Synopsis:"
-	echo "  Pings one or more hosts then act on up/down events"
+	echo "  Ping one or more hosts then act on up/down events with millisecond resolution"
 	echo
 	echo "Usage:"
 	echo "  $CODENAME [options]"

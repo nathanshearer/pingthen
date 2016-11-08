@@ -1,6 +1,5 @@
 Synopsis:
-  Pings an IP address and executes arbitrary commands based on the up/down
-  status of that IP
+  Ping one or more hosts then act on up/down events with millisecond resolution
 
 Usage:
   pingthen [options]
