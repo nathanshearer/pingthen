@@ -4,7 +4,7 @@ NAME="pingthen"
 CODENAME="pingthen"
 COPYRIGHT="Copyright (C) 2013 Nathan Shearer"
 LICENSE="GNU General Public License 2.0"
-VERSION="5.0.1.0"
+VERSION="5.0.2.0"
 
 # \brief Ping a host and execute functions depending on the results
 # \param $1 The timeout in miliseconds to wait for a ping respones
@@ -151,7 +151,7 @@ function pingthen_exit
 	EXITING=true
 	pingthen_log 1 "Monitoring stopping"
 	$ON_STOP
-	kill "${HOST_THREADS[@]}"
+	kill "${HOST_THREADS[@]}" > /dev/null 2>&1
 	pingthen_log 1 "Monitoring stopped"
 	local EXIT="$1"
 	local MESSAGE="$2"
