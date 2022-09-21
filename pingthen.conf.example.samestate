@@ -1,0 +1,67 @@
+# This example config pings 4 servers and sends an e-mail when all 4 servers are in the same up/down state.
+# Intersting features:
+#   Sends start/stop notifications
+#   Hosts are pinged by hostname instead of IP address
+#   The down trigger:
+#     is very sensitive to ensure a quick reaction
+#     calls on_down when 3 consecutive packets are lost
+#   The up trigger:
+#     requires a large number of replies to ensure stability
+#     calls on_up when 30 consecutive replies are received
+#   Host state is shared via temporary files in /tmp/pingthen
+
+#       host         timeout  delay  down when  up when  on down  on up  while down  while up
+HOSTS=( google.com   1000     1000   3          30       on_down  on_up  false       false \
+        yahoo.com    1000     1000   3          30       on_down  on_up  false       false \
+        youtube.com  1000     1000   3          30       on_down  on_up  false       false \
+        bing.com     1000     1000   3          30       on_down  on_up  false       false )
+
+ON_START=on_start
+ON_STOP=on_stop
+EMAIL="mail@example.com"
+
+function on_start
+{
+	# sleep for 60 seconds to allow networking services to start
+	sleep 60
+	local NOW=`date --rfc-3339=seconds`
+	echo "`hostname`: Monitoring started on $NOW" \
+		| mail -s "`hostname`: pingthen: Monitoring started on $NOW" $EMAIL
+	mkdir /tmp/pingthen
+}
+
+function on_down
+{
+	rm -f /tmp/pingthen/${HOST}.up
+	touch /tmp/pingthen/${HOST}.down
+	if [ -e /tmp/pingthen/google.com.down -a \
+	     -e /tmp/pingthen/yahoo.com.down -a \
+	     -e /tmp/pingthen/youtube.com.down -a \
+	     -e /tmp/pingthen/bing.com.down ]; then
+		echo "All test hosts are down." >/tmp/pingthen.email
+		cat /tmp/pingthen.email | mail -s "`hostname`: pingthen: test hosts down on `date --rfc-3339=seconds`" $EMAIL
+		rm -f /tmp/pingthen.email
+	fi
+}
+
+function on_up
+{
+	rm -f /tmp/pingthen/${HOST}.down
+	touch /tmp/pingthen/${HOST}.up
+	if [ -e /tmp/pingthen/google.com.up -a \
+	     -e /tmp/pingthen/yahoo.com.up -a \
+	     -e /tmp/pingthen/youtube.com.up -a \
+	     -e /tmp/pingthen/bing.com.up ]; then
+		echo "All test hosts are up." >/tmp/pingthen.email
+		cat /tmp/pingthen.email | mail -s "`hostname`: pingthen: test hosts up on `date --rfc-3339=seconds`" $EMAIL
+		rm -f /tmp/pingthen.email
+	fi
+}
+
+function on_stop
+{
+	local NOW=`date --rfc-3339=seconds`
+	echo "`hostname`: Monitoring stopped on $NOW" \
+		| mail -s "`hostname`: pingthen: Monitoring stopped on $NOW" $EMAIL
+	rm -rf /tmp/pingthen
+}

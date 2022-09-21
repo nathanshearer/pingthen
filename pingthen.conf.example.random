@@ -1,0 +1,143 @@
+# This example config selects 4 random IPv4 hosts and sends an e-mail when any one of them changes their up/down state.
+# Intersting features:
+#   There are enough active hosts on the internet for the Birthday Paradox to work in finding a random host.
+#   Sends start/stop notifications
+
+HOSTS_TOTAL=4
+ON_START=on_start
+ON_STOP=on_stop
+EMAIL="mail@example.com"
+
+# \brief Converts an IPv4 address to a base 10 number
+# \param $1 The IPv4 Address
+function pingthen_ipv4_to_base10
+{
+	local IFS
+	IFS=.
+	set -- $*
+	echo -n $(( $1*256*256*256 + $2*256*256 + $3*256 + $4 ))
+}
+
+# \brief Converts a base 10 number to an IPv4 address
+# \param $1 The base 10 number
+function pingthen_base10_to_ipv4
+{
+	local NUMBER=$(( $1 % $(( 2 ** 32 )) ))
+	echo -n $(( $NUMBER / $(( 2**24 )) )).$(( $(( $NUMBER % $(( 2**24 )) )) / $(( 2**16 )) )).$(( $(( $NUMBER % $(( 2**16 )) )) / $(( 2**8 )) )).$(( $NUMBER % $(( 2**8 )) ))
+}
+
+# \brief Generates a random internet routable IPv4 address
+function pingthen_random_ipv4
+{
+	local IPV4=0
+	while true; do
+		IPV4=$(( ($RANDOM*$RANDOM*$RANDOM)%4294967296 ))
+		# 0.0.0.0/8
+		if [ $IPV4 -ge $(pingthen_ipv4_to_base10 0.0.0.0) -a $IPV4 -le $(pingthen_ipv4_to_base10 0.255.255.255) ]; then continue; fi
+		# 10.0.0.0/8
+		if [ $IPV4 -ge $(pingthen_ipv4_to_base10 10.0.0.0) -a $IPV4 -le $(pingthen_ipv4_to_base10 10.255.255.255) ]; then continue; fi
+		# 100.64.0.0/10
+		if [ $IPV4 -ge $(pingthen_ipv4_to_base10 100.64.0.0) -a $IPV4 -le $(pingthen_ipv4_to_base10 100.127.255.255) ]; then continue; fi
+		# 127.0.0.0/8
+		if [ $IPV4 -ge $(pingthen_ipv4_to_base10 127.0.0.0) -a $IPV4 -le $(pingthen_ipv4_to_base10 127.255.255.255) ]; then continue; fi
+		# 169.254.0.0/16
+		if [ $IPV4 -ge $(pingthen_ipv4_to_base10 169.254.0.0) -a $IPV4 -le $(pingthen_ipv4_to_base10 169.254.255.255) ]; then continue; fi
+		# 172.16.0.0/12
+		if [ $IPV4 -ge $(pingthen_ipv4_to_base10 172.16.0.0) -a $IPV4 -le $(pingthen_ipv4_to_base10 172.31.255.255) ]; then continue; fi
+		# 192.0.0.0/24
+		if [ $IPV4 -ge $(pingthen_ipv4_to_base10 192.0.0.0) -a $IPV4 -le $(pingthen_ipv4_to_base10 192.0.0.255) ]; then continue; fi
+		# 192.0.2.0/24
+		if [ $IPV4 -ge $(pingthen_ipv4_to_base10 192.0.2.0) -a $IPV4 -le $(pingthen_ipv4_to_base10 192.0.2.255) ]; then continue; fi
+		# 192.88.99.0/24
+		if [ $IPV4 -ge $(pingthen_ipv4_to_base10 192.88.99.0) -a $IPV4 -le $(pingthen_ipv4_to_base10 192.88.99.255) ]; then continue; fi
+		# 192.168.0.0/16
+		if [ $IPV4 -ge $(pingthen_ipv4_to_base10 192.168.0.0) -a $IPV4 -lt $(pingthen_ipv4_to_base10 192.169.0.0) ]; then continue; fi
+		# 198.18.0.0/15
+		if [ $IPV4 -ge $(pingthen_ipv4_to_base10 198.18.0.0) -a $IPV4 -lt $(pingthen_ipv4_to_base10 198.19.255.255) ]; then continue; fi
+		# 198.51.100.0/24
+		if [ $IPV4 -ge $(pingthen_ipv4_to_base10 198.51.100.0) -a $IPV4 -lt $(pingthen_ipv4_to_base10 198.51.100.255) ]; then continue; fi
+		# 203.0.113.0/24
+		if [ $IPV4 -ge $(pingthen_ipv4_to_base10 203.0.113.0) -a $IPV4 -lt $(pingthen_ipv4_to_base10 203.0.113.255) ]; then continue; fi
+		# 224.0.0.0/4
+		if [ $IPV4 -ge $(pingthen_ipv4_to_base10 224.0.0.0) -a $IPV4 -lt $(pingthen_ipv4_to_base10 239.255.255.255) ]; then continue; fi
+		# 240.0.0.0
+		if [ $IPV4 -ge $(pingthen_ipv4_to_base10 240.0.0.0) -a $IPV4 -lt $(pingthen_ipv4_to_base10 255.255.255.255) ]; then continue; fi
+		# 255.255.255.255
+		if [ $IPV4 -eq $(pingthen_ipv4_to_base10 255.255.255.255) ]; then continue; fi
+		break
+	done
+	printf $(pingthen_base10_to_ipv4 $IPV4)
+}
+
+# \brief Generates a random internet routable IPv4 address that responts to pings
+function pingthen_random_ipv4_online
+{
+	local HOST_OFFLINE=true
+	while $HOST_OFFLINE; do
+		local HOST=$(pingthen_random_ipv4)
+		ping -c 1 -W 0.5 "$HOST" >/dev/null 2>/dev/null
+		if [ $? = 0 ]; then
+			printf "Candidate host $HOST is up.\n" > /dev/stderr
+			printf $HOST
+			break
+		else
+			printf "Candidate host $HOST is down.\n" > /dev/stderr
+		fi
+	done
+}
+
+function on_down
+{
+	local HOST=$1
+	local DOWN_ON=$2
+	local UP_ON=$3
+	echo "Host $HOST is down. 0/$DOWN_ON packets received." \
+		| mail -s "`hostname`: pingthen: $HOST down on `date --rfc-3339=seconds`" $EMAIL
+}
+
+function on_start
+{
+	# sleep for 60 seconds to allow networking services to start
+	sleep 60
+	local NOW=`date --rfc-3339=seconds`
+	echo "`hostname`: Monitoring started on $NOW" \
+		| mail -s "`hostname`: pingthen: Monitoring started on $NOW" $EMAIL
+}
+
+function on_stop
+{
+	local NOW=`date --rfc-3339=seconds`
+	echo "`hostname`: Monitoring stopped on $NOW" \
+		| mail -s "`hostname`: pingthen: Monitoring stopped on $NOW" $EMAIL
+}
+
+function on_up
+{
+	local HOST=$1
+	local DOWN_ON=$2
+	local UP_ON=$3
+	echo "Host $HOST is up. $UP_ON/$UP_ON packets received." \
+		| mail -s "`hostname`: pingthen: $HOST up on `date --rfc-3339=seconds`" $EMAIL
+}
+
+unset HOSTS
+for COUNT in $(seq 1 $HOSTS_TOTAL); do
+	# host
+	HOSTS[${#HOSTS[@]}]=$(pingthen_random_ipv4_online)
+	# timeout
+	HOSTS[${#HOSTS[@]}]=5000
+	# delay
+	HOSTS[${#HOSTS[@]}]=1000
+	# down when
+	HOSTS[${#HOSTS[@]}]=3
+	# up when
+	HOSTS[${#HOSTS[@]}]=5
+	# on down
+	HOSTS[${#HOSTS[@]}]=on_down
+	# on up
+	HOSTS[${#HOSTS[@]}]=on_up
+	# while down
+	HOSTS[${#HOSTS[@]}]=false
+	# while up
+	HOSTS[${#HOSTS[@]}]=false
+done
