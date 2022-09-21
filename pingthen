@@ -4,7 +4,7 @@ NAME="pingthen"
 CODENAME="pingthen"
 COPYRIGHT="Copyright (C) 2013 Nathan Shearer"
 LICENSE="GNU General Public License 2.0"
-VERSION="5.0.0.0"
+VERSION="5.0.1.0"
 
 # \brief Ping a host and execute functions depending on the results
 # \param $1 The timeout in miliseconds to wait for a ping respones
@@ -43,7 +43,7 @@ function pingthen_monitor
 		else
 			local HOST_IPV4="$HOST"
 		fi
-		fping -b 1472 -c 1 -q -r 0 -t $TIMEOUT $HOST_IPV4 >/dev/null 2>/dev/null
+		fping -c 1 -q -r 0 -t $TIMEOUT $HOST_IPV4 >/dev/null 2>/dev/null
 		local PING_RETURN=$?
 		if [ $PING_RETURN -eq 0 ]; then
 			TOTAL_RECEIVED=$(($TOTAL_RECEIVED+1))
@@ -176,25 +176,25 @@ function pingthen_exit
 function pingthen_help
 {
 	#     01234567890123456789012345678901234567890123456789012345678901234567890123456789
-	echo "Synopsis:"
+	echo "Description:"
 	echo "  Ping one or more hosts then act on up/down events with millisecond resolution"
 	echo
 	echo "Usage:"
 	echo "  $CODENAME [options]"
 	echo
 	echo "Options:"
-	echo "  -c pingthen.conf"
-	echo "    Load pingthen.conf after trying /etc/pingthen.conf"
-	echo "  -h"
+	echo "  -c, --config $CODENAME.conf"
+	echo "    Load $CODENAME.conf after trying /etc/$CODENAME.conf and ~/.$CODENAME.conf"
+	echo "  -h, --help"
 	echo "    Display this help message and exit."
-	echo "  -v #"
-	echo "    Use more or less verbose logging. Valid values are from 0 to 5 inclusive:"
-	echo "      0  No logging output"
-	echo "      1  Log the start/stop of this script"
-	echo "      2  Default. Log host state changes"
-	echo "      3  Log the moving window results after each ping request"
-	echo "      4  Log total results after each ping request"
-	echo "      5  Log each function call with arguments"
+	echo "  -v, --verbose #"
+	echo "    Use more or less verbose logging. Valid values are:"
+	echo "      0  No logging output."
+	echo "      1  Log the start/stop of this script."
+	echo "      2  Default. Log host state changes."
+	echo "      3  Log the moving window results after each ping request."
+	echo "      4  Log total results after each ping request."
+	echo "      5  Log each function call with arguments."
 	echo
 	echo "Version:"
 	echo "  $NAME $VERSION"
